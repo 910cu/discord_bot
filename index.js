@@ -241,7 +241,7 @@ async function setupSettingsPanel() {
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("cfg_btn_afk").setLabel("💤 AFK設定").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("cfg_btn_panel").setLabel("🛠️ パネル設定").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("cfg_btn_panel").setLabel("🛠️ VC作成パネル設定").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("cfg_btn_trigger").setLabel("➕ VC自動作成").setStyle(ButtonStyle.Secondary),
   );
 
@@ -291,7 +291,11 @@ function getAFKSettingsPayload() {
       .setDisabled(!isEnabled)
   );
 
-  return { embeds: [embed], components: [row1, row2], ephemeral: true };
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_back_main").setLabel("⬅️ 戻る").setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2, rowBack], ephemeral: true };
 }
 
 function getPanelSettingsPayload() {
@@ -322,7 +326,11 @@ function getPanelSettingsPayload() {
       .setDisabled(!isEnabled)
   );
 
-  return { embeds: [embed], components: [row1, row2], ephemeral: true };
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_back_main").setLabel("⬅️ 戻る").setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2, rowBack], ephemeral: true };
 }
 
 function getVCCreationSettingsPayload() {
@@ -369,7 +377,11 @@ function getVCCreationSettingsPayload() {
       .setDisabled(!isEnabled)
   );
 
-  return { embeds: [embed], components: [row1, row2, row3, row4], ephemeral: true };
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_back_main").setLabel("⬅️ 戻る").setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2, row3, row4, rowBack], ephemeral: true };
 }
 
 function getIntroKickSettingsPayload() {
@@ -409,7 +421,11 @@ function getIntroKickSettingsPayload() {
       .setDisabled(!isEnabled)
   );
 
-  return { embeds: [embed], components: [row1, row2], ephemeral: true };
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_back_main").setLabel("⬅️ 戻る").setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2, rowBack], ephemeral: true };
 }
 
 function getIntroDisplaySettingsPayload() {
@@ -441,7 +457,11 @@ function getIntroDisplaySettingsPayload() {
       .setDisabled(!isEnabled)
   );
 
-  return { embeds: [embed], components: [row1, row2], ephemeral: true };
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_back_main").setLabel("⬅️ 戻る").setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2, rowBack], ephemeral: true };
 }
 
 function getVCSettingsPayload() {
@@ -482,7 +502,11 @@ function getVCSettingsPayload() {
       .setDisabled(!isEnabled)
   );
 
-  return { embeds: [embed], components: [row1, row2, row3], ephemeral: true };
+  const rowBack = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_back_main").setLabel("⬅️ 戻る").setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2, row3, rowBack], ephemeral: true };
 }
 
 
@@ -592,7 +616,7 @@ function buildPanelPayload(vc) {
 
   if (isLimitLocked) {
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary).setDisabled(!features.afkEnabled),
     );
     return { embeds: [embed], components: [row] };
   }
@@ -609,7 +633,7 @@ function buildPanelPayload(vc) {
       .setLabel("🛡️ 部屋制限")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!features.genderRoleEnabled),
-    new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary).setDisabled(!features.afkEnabled),
   );
 
   const components = [row1];
@@ -1233,6 +1257,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ★ 設定パネルの各サブ設定ボタン（既存の表示を消してサブパネルを表示）
   // interaction.reply() ではなく interaction.update() を使って排他的に表示する
   // ─────────────────────────────────────────────────────────────────────────────
+
+  // ── ⬅️ サブパネルからメイン設定パネルへ戻る ──────────────────────────────
+  if (interaction.isButton() && interaction.customId === "cfg_back_main") {
+    await interaction.update({ content: null, embeds: [], components: [] });
+    await setupSettingsPanel();
+    return;
+  }
 
   // ── 💤 AFK設定 ────────────────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_afk") {
