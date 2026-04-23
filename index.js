@@ -185,8 +185,8 @@ async function setupSettingsPanel() {
     for (const m of oldMsgs.values()) await m.delete().catch(() => { });
   } catch { }
 
-  const on = "🟢 **ON**";
-  const off = "🔴 **OFF**";
+  const on = "✅ **有効**";
+  const off = "🔘 **無効**";
 
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
@@ -240,8 +240,8 @@ async function setupSettingsPanel() {
 // ─── サブパネル用ペイロード生成 ──────────────────────────────────────────────
 
 function getIntroSettingsPayload() {
-  const on = "🟢 **ON**";
-  const off = "🔴 **OFF**";
+  const on = "✅ **有効**";
+  const off = "🔘 **無効**";
 
   const embed = new EmbedBuilder()
     .setTitle("📝 自己紹介機能 設定")
@@ -260,11 +260,11 @@ function getIntroSettingsPayload() {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("toggle_intro_kick")
-      .setLabel(`自動キック: ${features.introKickEnabled ? "ON" : "OFF"}`)
+      .setLabel(`自動キック: ${features.introKickEnabled ? "有効" : "無効"}`)
       .setStyle(features.introKickEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId("toggle_vc_intro")
-      .setLabel(`VC内表示: ${features.vcIntroDisplayEnabled ? "ON" : "OFF"}`)
+      .setLabel(`VC内表示: ${features.vcIntroDisplayEnabled ? "有効" : "無効"}`)
       .setStyle(features.vcIntroDisplayEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId("config_intro_time")
@@ -283,8 +283,8 @@ function getIntroSettingsPayload() {
 }
 
 function getVCSettingsPayload() {
-  const on = "🟢 **ON**";
-  const off = "🔴 **OFF**";
+  const on = "✅ **有効**";
+  const off = "🔘 **無効**";
 
   const embed = new EmbedBuilder()
     .setTitle("🎙️ VC機能 設定")
@@ -300,7 +300,7 @@ function getVCSettingsPayload() {
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("toggle_gender")
-      .setLabel(`性別制限: ${features.genderRoleEnabled ? "ON" : "OFF"}`)
+      .setLabel(`性別制限: ${features.genderRoleEnabled ? "有効" : "無効"}`)
       .setStyle(features.genderRoleEnabled ? ButtonStyle.Success : ButtonStyle.Danger)
   );
 
