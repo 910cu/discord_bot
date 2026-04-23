@@ -1,0 +1,15 @@
+# 依存パッケージ
+node_modules/
+
+# 実行時に生成されるデータファイル（GitHubには含めない）
+introDB.json
+messages.json
+guildConfigs.json
+
+# ローカル開発用の環境ファイル
+.env
+.env.local
+
+# OS生成ファイル
+.DS_Store
+Thumbs.db

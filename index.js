@@ -202,10 +202,14 @@ async function setupSettingsPanel(overrideId) {
       data.guildId = chan.guild.id;
       guildId = chan.guild.id; // グローバル変数も更新
     }
+    dynamicVC = data.dynamicVC || dynamicVC;
+    roles = data.roles || roles;
 
     fs.writeFileSync("./config.json", JSON.stringify(data, null, 2));
   }
-  const channel = client.channels.cache.get(require("./config.json").settingsChannelId);
+  
+  const currentConfig = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
+  const channel = await client.channels.fetch(currentConfig.settingsChannelId).catch(() => null);
   if (!channel) return;
   try {
     const msgs = await channel.messages.fetch({ limit: 10 });
