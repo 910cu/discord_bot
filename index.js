@@ -157,7 +157,6 @@ async function deployCommands() {
 }
 
 // ─── 設定パネルを設置 ────────────────────────────────────────────────────────
-const SETTINGS_CHANNEL_ID = "1496141555705319445";
 
 function saveFeatures() {
   const configPath = "./config.json";
@@ -177,8 +176,15 @@ function bumpPanelVersion() {
   return meta;
 }
 
-async function setupSettingsPanel() {
-  const channel = client.channels.cache.get(SETTINGS_CHANNEL_ID);
+async function setupSettingsPanel(overrideChannelId) {
+  if (overrideChannelId) {
+    // /setup コマンドで指定されたチャンネルIDを config に反映（既に commands.js 側で保存済み）
+    const fileData = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
+    fileData.settingsChannelId = overrideChannelId;
+    fs.writeFileSync("./config.json", JSON.stringify(fileData, null, 2));
+  }
+  const channelId = require("./config.json").settingsChannelId;
+  const channel = client.channels.cache.get(channelId);
   if (!channel) return;
 
   try {
@@ -2038,6 +2044,7 @@ async function syncAndCheckIntros(guild) {
 
 // ─── 起動時クリーンアップ & パネル設置 ──────────────────────────────────────
 client.once(Events.ClientReady, async () => {
+  global.__setupSettingsPanel = setupSettingsPanel; // /setup コマンドから呼べるよう登録
   setupSettingsPanel();
   if (!dynamicVC?.cleanupCategoryId) return;
   try {
