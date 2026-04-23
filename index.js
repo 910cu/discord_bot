@@ -226,20 +226,94 @@ async function setupSettingsPanel() {
   const updatedAt = new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", hour12: false });
   embed.setFooter({ text: `v${meta.version}  ·  最終更新: ${updatedAt} (JST)` });
 
-  // Row 1: 詳細設定ボタン
+  // 詳細設定ボタン
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("cfg_btn_basic").setLabel("🏗️ 基本設定").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("cfg_btn_intro").setLabel("📝 自己紹介機能").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("cfg_btn_vc").setLabel("🚻 VC機能").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("config_messages").setLabel("💬 メッセージ").setStyle(ButtonStyle.Secondary),
   );
 
-  // Row 2: メッセージ設定
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("config_messages").setLabel("💬 メッセージ設定").setStyle(ButtonStyle.Primary),
-  );
-
-  await channel.send({ embeds: [embed], components: [row1, row2] });
+  await channel.send({ embeds: [embed], components: [row1] });
 }
+
+// ─── サブパネル用ペイロード生成 ──────────────────────────────────────────────
+
+function getIntroSettingsPayload() {
+  const on = "🟢 **ON**";
+  const off = "🔴 **OFF**";
+
+  const embed = new EmbedBuilder()
+    .setTitle("📝 自己紹介機能 設定")
+    .setDescription(
+      `現在のステータス:\n` +
+      `- 自動キック: ${features.introKickEnabled ? on : off}\n` +
+      `- VC内表示: ${features.vcIntroDisplayEnabled ? on : off}\n\n` +
+      `詳細設定:\n` +
+      `- 📝 期限確認チャンネル: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
+      `- 📋 VC表示用チャンネル: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n` +
+      `- ⚠️ 警告タイミング: ${dynamicVC.introWarnMinutes ? `\`${dynamicVC.introWarnMinutes}\` 分後` : "`2880` 分後 (2日)"}\n` +
+      `- 🚪 キックタイミング: ${dynamicVC.introKickMinutes ? `\`${dynamicVC.introKickMinutes}\` 分後` : "`4320` 分後 (3日)"}`
+    )
+    .setColor(0x5865f2);
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("toggle_intro_kick")
+      .setLabel(`自動キック: ${features.introKickEnabled ? "ON" : "OFF"}`)
+      .setStyle(features.introKickEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId("toggle_vc_intro")
+      .setLabel(`VC内表示: ${features.vcIntroDisplayEnabled ? "ON" : "OFF"}`)
+      .setStyle(features.vcIntroDisplayEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId("config_intro_time")
+      .setLabel("⏱️ 期限タイミング設定")
+      .setStyle(ButtonStyle.Primary)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_introcheck").setPlaceholder("📝 期限確認用チャンネルを選択").setChannelTypes([ChannelType.GuildText])
+  );
+  const row3 = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_introsource").setPlaceholder("📋 VC表示用チャンネルを選択").setChannelTypes([ChannelType.GuildText])
+  );
+
+  return { embeds: [embed], components: [row1, row2, row3], ephemeral: true };
+}
+
+function getVCSettingsPayload() {
+  const on = "🟢 **ON**";
+  const off = "🔴 **OFF**";
+
+  const embed = new EmbedBuilder()
+    .setTitle("🎙️ VC機能 設定")
+    .setDescription(
+      `現在のステータス:\n` +
+      `- 性別制限機能: ${features.genderRoleEnabled ? on : off}\n\n` +
+      `詳細設定:\n` +
+      `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
+      `- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
+    )
+    .setColor(0x57f287);
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("toggle_gender")
+      .setLabel(`性別制限: ${features.genderRoleEnabled ? "ON" : "OFF"}`)
+      .setStyle(features.genderRoleEnabled ? ButtonStyle.Success : ButtonStyle.Danger)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new RoleSelectMenuBuilder().setCustomId("select_cfg_male").setPlaceholder("♂️ 男性ロールを選択")
+  );
+  const row3 = new ActionRowBuilder().addComponents(
+    new RoleSelectMenuBuilder().setCustomId("select_cfg_female").setPlaceholder("♀️ 女性ロールを選択")
+  );
+
+  return { embeds: [embed], components: [row1, row2, row3], ephemeral: true };
+}
+
 
 
 // ─── VC作成パネルをテキストチャンネルに設置 ──────────────────────────────────
@@ -980,103 +1054,48 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
   // ── 📝 自己紹介機能（チャンネル・期限） ─────────────────────────────────────
-  if (interaction.isButton() && (interaction.customId === "cfg_btn_intro" || interaction.customId === "toggle_intro_kick" || interaction.customId === "toggle_vc_intro")) {
-    
-    if (interaction.customId === "toggle_intro_kick") {
-      features.introKickEnabled = !features.introKickEnabled;
-      saveFeatures();
-    } else if (interaction.customId === "toggle_vc_intro") {
-      features.vcIntroDisplayEnabled = !features.vcIntroDisplayEnabled;
-      saveFeatures();
-    }
-
-    const row1 = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId("select_cfg_introcheck").setPlaceholder("📝 期限確認用チャンネルを選択").setChannelTypes([ChannelType.GuildText])
-    );
-    const row2 = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId("select_cfg_introsource").setPlaceholder("📋 VC表示用チャンネルを選択").setChannelTypes([ChannelType.GuildText])
-    );
-
-    // 期限設定ボタン（Modal起動）
-    const row3 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("config_intro_time").setLabel("⏱️ 期限タイミングを設定").setStyle(ButtonStyle.Primary)
-    );
-
-    // ON/OFFトグル
-    const row4 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("toggle_intro_kick")
-        .setLabel(features.introKickEnabled ? "🟢 自己紹介キック: ON" : "🔴 自己紹介キック: OFF")
-        .setStyle(features.introKickEnabled ? ButtonStyle.Success : ButtonStyle.Secondary),
-      new ButtonBuilder()
-        .setCustomId("toggle_vc_intro")
-        .setLabel(features.vcIntroDisplayEnabled ? "🟢 VC内表示: ON" : "🔴 VC内表示: OFF")
-        .setStyle(features.vcIntroDisplayEnabled ? ButtonStyle.Success : ButtonStyle.Secondary)
-    );
-
-    const embed = new EmbedBuilder()
-      .setTitle("📝 自己紹介機能 設定")
-      .setDescription(
-        `現在の設定:\n` +
-        `- 📝 期限確認チャンネル: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
-        `- 📋 VC表示用チャンネル: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n` +
-        `- ⚠️ 警告タイミング: ${dynamicVC.introWarnMinutes ? `\`${dynamicVC.introWarnMinutes}\` 分後` : "`2880` 分後 (2日)"}\n` +
-        `- 🚪 キックタイミング: ${dynamicVC.introKickMinutes ? `\`${dynamicVC.introKickMinutes}\` 分後` : "`4320` 分後 (3日)"}`
-      )
-      .setColor(0x5865f2);
-
-    if (interaction.customId === "cfg_btn_intro") {
-      await interaction.reply({ embeds: [embed], components: [row1, row2, row3, row4], ephemeral: true });
-      setTimeout(() => interaction.deleteReply().catch(() => { }), 60000);
-    } else {
-      await interaction.update({ embeds: [embed], components: [row1, row2, row3, row4] });
-      await setupSettingsPanel();
-    }
+  if (interaction.isButton() && interaction.customId === "cfg_btn_intro") {
+    const payload = getIntroSettingsPayload();
+    await interaction.reply(payload);
     return;
   }
+
 
   // ── 🎙️ VC機能（性別ロール） ──────────────────────────────────────────────
-  if (interaction.isButton() && (interaction.customId === "cfg_btn_vc" || interaction.customId === "toggle_gender")) {
-    
-    if (interaction.customId === "toggle_gender") {
-      features.genderRoleEnabled = !features.genderRoleEnabled;
-      saveFeatures();
-    }
-
-    const row1 = new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder().setCustomId("select_cfg_male").setPlaceholder("♂️ 男性ロールを選択")
-    );
-    const row2 = new ActionRowBuilder().addComponents(
-      new RoleSelectMenuBuilder().setCustomId("select_cfg_female").setPlaceholder("♀️ 女性ロールを選択")
-    );
-
-    const row3 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("toggle_gender")
-        .setLabel(features.genderRoleEnabled ? "🟢 性別制限: ON" : "🔴 性別制限: OFF")
-        .setStyle(features.genderRoleEnabled ? ButtonStyle.Success : ButtonStyle.Secondary)
-    );
-
-    const embed = new EmbedBuilder()
-      .setTitle("🎙️ VC機能 設定")
-      .setDescription(
-        `現在の設定:\n` +
-        `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
-        `- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
-      )
-      .setColor(0x57f287);
-
-    if (interaction.customId === "cfg_btn_vc") {
-      await interaction.reply({ embeds: [embed], components: [row1, row2, row3], ephemeral: true });
-      setTimeout(() => interaction.deleteReply().catch(() => { }), 60000);
-    } else {
-      await interaction.update({ embeds: [embed], components: [row1, row2, row3] });
-      await setupSettingsPanel();
-    }
+  if (interaction.isButton() && interaction.customId === "cfg_btn_vc") {
+    const payload = getVCSettingsPayload();
+    await interaction.reply(payload);
     return;
   }
 
 
+
+  // ── ON/OFFトグル：自己紹介キック機能 ────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "toggle_intro_kick") {
+    features.introKickEnabled = !features.introKickEnabled;
+    saveFeatures();
+    await interaction.update(getIntroSettingsPayload());
+    await setupSettingsPanel();
+    return;
+  }
+
+  // ── ON/OFFトグル：VC内自己紹介表示 ─────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "toggle_vc_intro") {
+    features.vcIntroDisplayEnabled = !features.vcIntroDisplayEnabled;
+    saveFeatures();
+    await interaction.update(getIntroSettingsPayload());
+    await setupSettingsPanel();
+    return;
+  }
+
+  // ── ON/OFFトグル：性別制限機能 ──────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "toggle_gender") {
+    features.genderRoleEnabled = !features.genderRoleEnabled;
+    saveFeatures();
+    await interaction.update(getVCSettingsPayload());
+    await setupSettingsPanel();
+    return;
+  }
 
 
   // ── セレクトメニューの選択処理 ────────────────────────────────────────────
