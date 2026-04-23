@@ -621,32 +621,31 @@ function buildPanelPayload(vc) {
     return { embeds: [embed], components: [row] };
   }
 
+  // VC操作ボタンをまとめる: 1行目に部屋主操作、2行目にAFK＋ノック
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("vc_rename").setLabel("✏️ 部屋名変更").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("vc_toggle_lock")
       .setLabel(locked ? "🔓 ロック解除" : "🔒 ロックする")
       .setStyle(locked ? ButtonStyle.Danger : ButtonStyle.Secondary),
-    // ★ 変更: 「部屋制限」ボタン（機能オフ時はdisabled）
     new ButtonBuilder()
       .setCustomId("vc_settings_btn")
       .setLabel("🛡️ 部屋制限")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!features.genderRoleEnabled),
-    new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary).setDisabled(!features.afkEnabled),
   );
 
-  const components = [row1];
-
+  const row2Components = [
+    new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary).setDisabled(!features.afkEnabled),
+  ];
   if (locked) {
-    const row4 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("label_knock").setLabel("【参加希望】").setStyle(ButtonStyle.Secondary).setDisabled(true),
-      new ButtonBuilder().setCustomId(`vc_knock_${vc.id}`).setLabel("🚪 ノックして参加をリクエスト (通話外の方用)").setStyle(ButtonStyle.Success)
+    row2Components.push(
+      new ButtonBuilder().setCustomId(`vc_knock_${vc.id}`).setLabel("🚪 ノックして参加をリクエスト").setStyle(ButtonStyle.Success)
     );
-    components.push(row4);
   }
+  const row2 = new ActionRowBuilder().addComponents(...row2Components);
 
-  return { embeds: [embed], components };
+  return { embeds: [embed], components: [row1, row2] };
 }
 
 // ─── 部屋制限サブメニューのpayloadを生成 ─────────────────────────────────────
@@ -1260,8 +1259,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── ⬅️ サブパネルからメイン設定パネルへ戻る ──────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_back_main") {
-    await interaction.update({ content: null, embeds: [], components: [] });
-    await setupSettingsPanel();
+    // ephemeralメッセージなのでdeferUpdate→deleteReplyで閉じるだけ
+    await interaction.deferUpdate();
+    try { await interaction.deleteReply(); } catch { }
     return;
   }
 
