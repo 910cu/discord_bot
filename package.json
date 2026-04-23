@@ -1,0 +1,13 @@
+{
+  "name": "community-discord-bot",
+  "version": "1.0.0",
+  "description": "コミュニティサーバー用 Discord BOT",
+  "main": "index.js",
+  "scripts": {
+    "start": "npm install --omit=dev && node index.js",
+    "deploy": "node deploy-commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.18.0"
+  }
+}
