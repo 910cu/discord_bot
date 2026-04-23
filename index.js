@@ -262,6 +262,74 @@ async function setupSettingsPanel() {
 
 // ─── サブパネル用ペイロード生成 ──────────────────────────────────────────────
 
+function getMainSettingsPayload() {
+  let description = ``;
+
+  if (features.afkEnabled || features.vcPanelEnabled) {
+    description += `### ⚙️ 基本設定 [Basic]\n`;
+    description += `-# BOTの基本的な動作環境設定です。\n`;
+    if (features.afkEnabled) {
+      description += `> AFK (寝落ち) ─ ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n`;
+    }
+    if (features.vcPanelEnabled) {
+      description += `> VC作成パネル ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n`;
+    }
+    description += `\n`;
+  }
+
+  if (features.vcCreationEnabled) {
+    description += `### ➕ VC自動作成 [Creation]\n`;
+    description += `-# 自動でVCを作成するトリガーチャンネルの設定です。\n`;
+    description += `> 自由枠 ─ ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n`;
+    description += `> 4人部屋 ─ ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"}\n`;
+    description += `> 5人部屋 ─ ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}\n\n`;
+  }
+
+  if (features.introKickEnabled) {
+    description += `### 📝 未提出者自動整理 [Profile Guard]\n`;
+    description += `-# 未提出者への警告や自動キックの設定です。\n`;
+    description += `- 提出確認チャンネル: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n`;
+    description += `> 警告 ─ 参加から ${dynamicVC.introWarnMinutes ?? 2880} 分後\n`;
+    description += `> 実行 ─ 参加から ${dynamicVC.introKickMinutes ?? 4320} 分後\n\n`;
+  }
+
+  if (features.vcIntroDisplayEnabled) {
+    description += `### 🖼️ VC内自己紹介表示 [Intro Display]\n`;
+    description += `-# 入室時に自己紹介文をVC内テキストへ自動転送します。\n`;
+    description += `- 表示用ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n\n`;
+  }
+
+  if (features.genderRoleEnabled) {
+    description += `### 🚻 部屋制限 [Room Guard]\n`;
+    description += `-# 性別ロールによる入室制限の設定です。\n`;
+    description += `> ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n`;
+    description += `> ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n`;
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setTitle("⬛ DIS COORDE | Control Panel")
+    .setDescription(description || "（有効な機能がありません）");
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_btn_afk").setLabel("💤 AFK設定").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("cfg_btn_panel").setLabel("🛠️ VC作成パネル設定").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("cfg_btn_trigger").setLabel("➕ VC自動作成").setStyle(ButtonStyle.Secondary),
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_btn_intro_kick").setLabel("📝 未提出者整理").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("cfg_btn_intro_display").setLabel("🖼️ VC内自己紹介表示").setStyle(ButtonStyle.Secondary),
+  );
+
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_btn_vc").setLabel("🚻 部屋制限").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("config_messages").setLabel("💬 メッセージ設定").setStyle(ButtonStyle.Secondary),
+  );
+
+  return { content: null, embeds: [embed], components: [row1, row2, row3], ephemeral: true };
+}
+
 function getAFKSettingsPayload() {
   const on = "🟩";
   const off = "🟥";
@@ -621,31 +689,32 @@ function buildPanelPayload(vc) {
     return { embeds: [embed], components: [row] };
   }
 
-  // VC操作ボタンをまとめる: 1行目に部屋主操作、2行目にAFK＋ノック
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("vc_rename").setLabel("✏️ 部屋名変更").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("vc_toggle_lock")
       .setLabel(locked ? "🔓 ロック解除" : "🔒 ロックする")
       .setStyle(locked ? ButtonStyle.Danger : ButtonStyle.Secondary),
+    // ★ 変更: 「部屋制限」ボタン（機能オフ時はdisabled）
     new ButtonBuilder()
       .setCustomId("vc_settings_btn")
       .setLabel("🛡️ 部屋制限")
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(!features.genderRoleEnabled),
+    new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary).setDisabled(!features.afkEnabled),
   );
 
-  const row2Components = [
-    new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary).setDisabled(!features.afkEnabled),
-  ];
-  if (locked) {
-    row2Components.push(
-      new ButtonBuilder().setCustomId(`vc_knock_${vc.id}`).setLabel("🚪 ノックして参加をリクエスト").setStyle(ButtonStyle.Success)
-    );
-  }
-  const row2 = new ActionRowBuilder().addComponents(...row2Components);
+  const components = [row1];
 
-  return { embeds: [embed], components: [row1, row2] };
+  if (locked) {
+    const row4 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("label_knock").setLabel("【参加希望】").setStyle(ButtonStyle.Secondary).setDisabled(true),
+      new ButtonBuilder().setCustomId(`vc_knock_${vc.id}`).setLabel("🚪 ノックして参加をリクエスト (通話外の方用)").setStyle(ButtonStyle.Success)
+    );
+    components.push(row4);
+  }
+
+  return { embeds: [embed], components };
 }
 
 // ─── 部屋制限サブメニューのpayloadを生成 ─────────────────────────────────────
@@ -1259,9 +1328,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── ⬅️ サブパネルからメイン設定パネルへ戻る ──────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_back_main") {
-    // ephemeralメッセージなのでdeferUpdate→deleteReplyで閉じるだけ
-    await interaction.deferUpdate();
-    try { await interaction.deleteReply(); } catch { }
+    await interaction.update(getMainSettingsPayload());
     return;
   }
 
