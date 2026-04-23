@@ -451,11 +451,34 @@ function buildPanelPayload(vc) {
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, ownerId = vcOwners.get(vc.id), isLimitLocked = limitLockedVCs.has(vc.id);
   const gl = gender === "male" ? "♂️ 男性のみ" : gender === "female" ? "♀️ 女性のみ" : "👥 制限なし", ll = (vc.userLimit ?? 0) === 0 ? "∞ 無制限" : `${vc.userLimit}人`;
   const desc = `### 👑 部屋主 [Owner]\n> <@${ownerId}>\n\n▼ **設定状況 [Status]**\n> 状態 ─ ${locked ? "🔴 **LOCKED**" : "🟢 **OPEN**"}\n> 上限 ─ \`${ll}\`\n> 制限 ─ \`${gl}\`\n\n-# 🛡️ 制限・名前変更は**部屋主のみ**可\n-# 🛏️ お布団は**誰でも**可`;
-  if (isLimitLocked) return { embeds: [createEmbed(desc, locked ? 0xe74c3c : 0x57f287)], components: [createRow(createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !features.afkEnabled))] };
-  const row1 = createRow(createBtn("vc_rename", "✏️ 部屋名変更"), createBtn("vc_toggle_lock", locked ? "🔓 ロック解除" : "🔒 ロックする", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 部屋制限", ButtonStyle.Secondary, !features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !features.afkEnabled));
+
+  // メインパネル：管理メニューとAFKボタンのみに集約
+  const row1 = createRow(
+    createBtn("vc_manage_menu", "⚙️ 部屋管理", ButtonStyle.Secondary),
+    createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !features.afkEnabled)
+  );
+
   const components = [row1];
   if (locked) components.push(createRow(createBtn("label_knock", "【参加希望】", ButtonStyle.Secondary, true), createBtn(`vc_knock_${vc.id}`, "🚪 ノックして参加をリクエスト", ButtonStyle.Success)));
+
   return { embeds: [createEmbed(desc, locked ? 0xe74c3c : 0x57f287)], components };
+}
+
+function buildVCManageMenuPayload(vc) {
+  const locked = lockedVCs.has(vc.id), ownerId = vcOwners.get(vc.id);
+  const desc = `### ⚙️ 部屋管理メニュー [Management]\nここでは部屋の名前変更やロック、各種制限の設定が行えます。\n\n**現在の状態:**\n> ロック ─ ${locked ? "🔴 **LOCKED**" : "🟢 **OPEN**"}`;
+
+  const row1 = createRow(
+    createBtn("vc_rename", "✏️ 部屋名変更"),
+    createBtn("vc_toggle_lock", locked ? "🔓 ロック解除" : "🔒 ロックする", locked ? ButtonStyle.Danger : ButtonStyle.Secondary),
+    createBtn("vc_settings_btn", "🛡️ 部屋制限", ButtonStyle.Secondary, !features.genderRoleEnabled)
+  );
+  const rowBack = createRow(createBtn("vc_main_panel", "⬅️ 戻る"));
+
+  return {
+    embeds: [createEmbed(desc, 0x2b2d31)],
+    components: [row1, rowBack]
+  };
 }
 
 function buildVCSettingsPayload(vc) {
@@ -468,7 +491,7 @@ function buildVCSettingsPayload(vc) {
     components: [
       createRow(createBtn("label_g", "【性別】", ButtonStyle.Secondary, true), createBtn("vc_gender_none", "なし", gStyle(null), gDis), createBtn("vc_gender_male", "♂️ 男性", gStyle("male"), gDis), createBtn("vc_gender_female", "♀️ 女性", gStyle("female"), gDis)),
       createRow(createBtn("label_l", "【人数】", ButtonStyle.Secondary, true), createBtn("vc_limit_0", "∞ 無制限", lStyle(0)), createBtn("vc_limit_4", "4人", lStyle(4)), createBtn("vc_limit_5", "5人", lStyle(5)), createBtn("vc_limit_custom", "指定...", ButtonStyle.Primary)),
-      createRow(createBtn("vc_main_panel", "⬅️ 戻る"))
+      createRow(createBtn("vc_manage_menu", "⬅️ 戻る"))
     ]
   };
 }
@@ -493,9 +516,9 @@ async function sendOrUpdateControlPanel(vc) {
 }
 
 // ─── ボタン操作時: interaction.update() でパネルをその場で書き換え ───────────
-async function updatePanelViaInteraction(interaction, vc) {
+async function updatePanelViaInteraction(interaction, vc, payloadFn = buildPanelPayload) {
   try {
-    await interaction.update(buildPanelPayload(vc));
+    await interaction.update(payloadFn(vc));
   } catch (e) {
     console.error("[ControlPanel] interaction.update失敗:", e.message);
     await sendOrUpdateControlPanel(vc);
@@ -698,8 +721,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
       console.log(`[Lock] ロック: ${vc.name}`);
     }
 
-    await updatePanelViaInteraction(interaction, vc);
+    await updatePanelViaInteraction(interaction, vc, buildVCManageMenuPayload);
     await updateVcName(vc, null, interaction);
+    return;
+  }
+
+  // ── ボタン：部屋管理メニュー表示 ──────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "vc_manage_menu") {
+    const vc = interaction.member.voice.channel;
+    if (!vc || !tempChannels.has(vc.id)) { await interaction.deferUpdate(); return; }
+    if (vcOwners.get(vc.id) !== interaction.user.id) { await interaction.deferUpdate(); return; }
+
+    await interaction.update(buildVCManageMenuPayload(vc));
     return;
   }
 
