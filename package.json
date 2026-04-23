@@ -4,7 +4,7 @@
   "description": "コミュニティサーバー用 Discord BOT",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "npm install --omit=dev && node index.js",
     "deploy": "node deploy-commands.js"
   },
   "dependencies": {
