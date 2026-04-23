@@ -185,46 +185,48 @@ async function setupSettingsPanel() {
     for (const m of oldMsgs.values()) await m.delete().catch(() => { });
   } catch { }
 
-  const on = "🟩";
-  const off = "🟥";
-
-  const embed = new EmbedBuilder()
-    .setColor(0x2b2d31)
-    .setTitle("⚙️ BOT 設定コントロールパネル")
-    .setDescription(
-      "-# 各機能の設定やON/OFFを下のボタンから変更できます。\n\n" +
-
-      "### 🏗️ 基本設定\n" +
-      "-# VCの作成・管理に必要なチャンネルとトリガーの設定です。\n" +
-      `- 💤 **AFK（寝落ち移動先）** : ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n` +
-      `- 🛠️ **VC作成パネル** : ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n` +
-      `- ➕ **自由枠トリガー** : ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n` +
-      `- 👥 **4人部屋トリガー** : ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"}\n` +
-      `- 👥 **5人部屋トリガー** : ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}\n\n` +
-
-      `### 📝 自己紹介機能 ─ ${features.introKickEnabled ? on : off}\n` +
-      "-# 参加後に自己紹介を書かないメンバーへの警告・自動キック機能です。\n" +
-      `- 📝 **期限確認チャンネル** : ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
-      `-# 　↑ このチャンネルに書いた人を「自己紹介済み」として記録します。\n` +
-      `- 📋 **VC表示用チャンネル** : ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n` +
-      `-# 　↑ VCに入った時、このチャンネルの自己紹介文がVC内に自動表示されます。\n` +
-      `- ⚠️ **警告タイミング** : 参加から \`${dynamicVC.introWarnMinutes ?? 2880}\` 分後\n` +
-      `- 🚪 **キックタイミング** : 参加から \`${dynamicVC.introKickMinutes ?? 4320}\` 分後\n\n` +
-
-      `### 🖼️ VC内自己紹介表示 ─ ${features.vcIntroDisplayEnabled ? on : off}\n` +
-      "-# VCに入室した際、その人の自己紹介をVC内テキストに自動投稿する機能です。\n\n" +
-
-      `### 🚻 VC性別制限機能 ─ ${features.genderRoleEnabled ? on : off}\n` +
-      "-# VC部屋主が「♂️ 男性のみ」「♀️ 女性のみ」に設定できる機能です。\n" +
-      "-# ロールが付いていないメンバーは入室時に自動でキックされます。\n" +
-      `- ♂️ **男性ロール** : ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
-      `- ♀️ **女性ロール** : ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
-    );
-
   // バージョンと最終更新日時をインクリメント・取得
   const meta = bumpPanelVersion();
   const updatedAt = new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", hour12: false });
-  embed.setFooter({ text: `v${meta.version}  ·  最終更新: ${updatedAt} (JST)` });
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setTitle("⬛ DIS COORDE | Control Panel")
+    .setDescription(
+      `-# Version ${meta.version}.0.0 ｜ System: Operational\n\n` +
+
+      `### ⚙️ 基本設定 [Basic]\n` +
+      "-# VCの自動生成および管理に関するコア設定です。\n" +
+      `> **項目設定内容 / チャンネル**\n` +
+      `> AFK (寝落ち) ─ ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n` +
+      `> VC作成パネル ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n` +
+      `> \n` +
+      `> **【VC作成トリガー】**\n` +
+      `> 自由枠 ─ ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n` +
+      `> 4人部屋 ─ ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"}\n` +
+      `> 5人部屋 ─ ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}\n\n` +
+
+      `### 📝 自己紹介管理 [Profile Guard]\n` +
+      "-# 参加者の質を保つための自動処理設定です。\n" +
+      `- 提出確認チャンネル: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
+      `-# 　（投稿を検知してフラグを付与）\n` +
+      `- VC自動表示用ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n` +
+      `-# 　（入室時にここから引用）\n` +
+      `▼ **オートキック・スケジュール**\n` +
+      `> 警告 ─ 参加から ${dynamicVC.introWarnMinutes ?? 2880} 分後\n` +
+      `> 実行 ─ 参加から ${dynamicVC.introKickMinutes ?? 4320} 分後\n\n` +
+
+      `### 🎙️ VC拡張機能 [Voice Features]\n` +
+      `**VC内自己紹介表示**\n` +
+      `> 状態：${features.vcIntroDisplayEnabled ? "ENABLED (有効)" : "DISABLED (無効)"}\n` +
+      `> 内容：入室時に自己紹介文をVC内テキストへ自動転送します。\n\n` +
+      `**VC性別制限 (Gender Guard)**\n` +
+      `> 対象ロール：\n` +
+      `> ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
+      `> ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n` +
+      `> 仕様：ロール未付与のメンバーは入室時に自動キックされます。`
+    )
+    .setFooter({ text: `Last Updated: ${updatedAt} (JST)` });
 
   // 詳細設定ボタン
   const row1 = new ActionRowBuilder().addComponents(
@@ -236,6 +238,7 @@ async function setupSettingsPanel() {
 
   await channel.send({ embeds: [embed], components: [row1] });
 }
+
 
 // ─── サブパネル用ペイロード生成 ──────────────────────────────────────────────
 
