@@ -185,8 +185,8 @@ async function setupSettingsPanel() {
     for (const m of oldMsgs.values()) await m.delete().catch(() => { });
   } catch { }
 
-  const on = "🟩";
-  const off = "🟥";
+  const on = "🟢";
+  const off = "🔴";
 
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
@@ -200,25 +200,19 @@ async function setupSettingsPanel() {
       `- 🛠️ **VC作成パネル** : ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n` +
       `- ➕ **自由枠トリガー** : ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n` +
       `- 👥 **4人部屋トリガー** : ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"}\n` +
-      `- 👥 **5人部屋トリガー** : ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}\n\n` +
+      `- 👥 **5人部屋トリガー** : ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}\n\n" +
 
-      `### 📝 自己紹介機能 ─ ${features.introKickEnabled ? on : off}\n` +
-      "-# 参加後に自己紹介を書かないメンバーへの警告・自動キック機能です。\n" +
-      `- 📝 **期限確認チャンネル** : ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
-      `-# 　↑ このチャンネルに書いた人を「自己紹介済み」として記録します。\n` +
-      `- 📋 **VC表示用チャンネル** : ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n` +
-      `-# 　↑ VCに入った時、このチャンネルの自己紹介文がVC内に自動表示されます。\n` +
-      `- ⚠️ **警告タイミング** : 参加から \`${dynamicVC.introWarnMinutes ?? 2880}\` 分後\n` +
-      `- 🚪 **キックタイミング** : 参加から \`${dynamicVC.introKickMinutes ?? 4320}\` 分後\n\n` +
+      `### 📝 自己紹介機能\n` +
+      `${ features.introKickEnabled ? "🟢" : "🔴" } ** 自動キック機能 **\n` +
+      `${ features.vcIntroDisplayEnabled ? "🟢" : "🔴" } ** VC内自己紹介表示 **\n` +
+      `- 📝 ** 期限確認 ** : ${ dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`" }\n` +
+      `- 📋 ** VC表示用 ** : ${ dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`" }\n` +
+      `- ⚠️ ** 警告 /🚪キック **: \`${dynamicVC.introWarnMinutes ?? 2880}\`分 / \`${dynamicVC.introKickMinutes ?? 4320}\`分後\n\n` +
 
-      `### 🖼️ VC内自己紹介表示 ─ ${features.vcIntroDisplayEnabled ? on : off}\n` +
-      "-# VCに入室した際、その人の自己紹介をVC内テキストに自動投稿する機能です。\n\n" +
-
-      `### 🚻 VC性別制限機能 ─ ${features.genderRoleEnabled ? on : off}\n` +
-      "-# VC部屋主が「♂️ 男性のみ」「♀️ 女性のみ」に設定できる機能です。\n" +
-      "-# ロールが付いていないメンバーは入室時に自動でキックされます。\n" +
-      `- ♂️ **男性ロール** : ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
-      `- ♀️ **女性ロール** : ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
+    `### 🚻 VC機能\n` +
+    `${features.genderRoleEnabled ? "🟢" : "🔴"} **性別制限機能**\n` +
+    `- ♂️ **男性ロール** : ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
+    `- ♀️ **女性ロール** : ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
     );
 
   // バージョンと最終更新日時をインクリメント・取得
@@ -237,18 +231,16 @@ async function setupSettingsPanel() {
   await channel.send({ embeds: [embed], components: [row1] });
 }
 
+
 // ─── サブパネル用ペイロード生成 ──────────────────────────────────────────────
 
 function getIntroSettingsPayload() {
-  const on = "🟩";
-  const off = "🟥";
 
   const embed = new EmbedBuilder()
     .setTitle("📝 自己紹介機能 設定")
     .setDescription(
-      `現在のステータス:\n` +
-      `- 自動キック: ${features.introKickEnabled ? on : off}\n` +
-      `- VC内表示: ${features.vcIntroDisplayEnabled ? on : off}\n\n` +
+      `${features.introKickEnabled ? "🟢" : "🔴"} **自動キック機能**\n` +
+      `${features.vcIntroDisplayEnabled ? "🟢" : "🔴"} **VC内自己紹介表示**\n\n` +
       `詳細設定:\n` +
       `- 📝 期限確認チャンネル: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
       `- 📋 VC表示用チャンネル: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n` +
@@ -283,14 +275,11 @@ function getIntroSettingsPayload() {
 }
 
 function getVCSettingsPayload() {
-  const on = "🟩";
-  const off = "🟥";
 
   const embed = new EmbedBuilder()
     .setTitle("🎙️ VC機能 設定")
     .setDescription(
-      `現在のステータス:\n` +
-      `- 性別制限機能: ${features.genderRoleEnabled ? on : off}\n\n` +
+      `${features.genderRoleEnabled ? "🟢" : "🔴"} **性別制限機能**\n\n` +
       `詳細設定:\n` +
       `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
       `- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
