@@ -163,6 +163,18 @@ function saveFeatures() {
   fs.writeFileSync(configPath, JSON.stringify(fileData, null, 2));
 }
 
+// パネルのバージョンと最終更新日時をconfig.jsonに保存して返す
+function bumpPanelVersion() {
+  const configPath = "./config.json";
+  const fileData = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  const meta = fileData.meta || { version: 0, lastUpdated: null };
+  meta.version = (meta.version || 0) + 1;
+  meta.lastUpdated = new Date().toISOString();
+  fileData.meta = meta;
+  fs.writeFileSync(configPath, JSON.stringify(fileData, null, 2));
+  return meta;
+}
+
 async function setupSettingsPanel() {
   const channel = client.channels.cache.get(SETTINGS_CHANNEL_ID);
   if (!channel) return;
@@ -208,6 +220,11 @@ async function setupSettingsPanel() {
       `- ♂️ **男性ロール** : ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
       `- ♀️ **女性ロール** : ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
     );
+
+  // バージョンと最終更新日時をインクリメント・取得
+  const meta = bumpPanelVersion();
+  const updatedAt = new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", hour12: false });
+  embed.setFooter({ text: `v${meta.version}  ·  最終更新: ${updatedAt} (JST)` });
 
   // Row 1: 詳細設定ボタン
   const row1 = new ActionRowBuilder().addComponents(
