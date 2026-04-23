@@ -1,0 +1,23 @@
+{
+  "1060885542297948170": {
+    "dynamicVC": {
+      "triggerChannelId": "1060885542297948174",
+      "cleanupCategoryId": "1060885542297948172",
+      "channelName": "{user}のVC",
+      "userLimit": 0,
+      "createPanelChannelId": "1060885542297948173",
+      "afkChannelId": "1496142556042498278",
+      "introChannelId": "1496043493796221108",
+      "introWarnMinutes": 1,
+      "introKickMinutes": 3,
+      "introCheckChannelId": "1496043493796221108",
+      "introSourceChannelId": "1496417181464924192",
+      "triggerChannelId4": "1496410842714083338",
+      "triggerChannelId5": "1496411087770484847"
+    },
+    "roles": {
+      "male": "1493657341881749726",
+      "female": "1493657172033278039"
+    }
+  }
+}
