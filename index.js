@@ -432,38 +432,19 @@ function buildPanelPayload(vc) {
     return { embeds: [embed], components: [row] };
   }
 
-
   // Row 1: 基本操作
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("label_basic").setLabel("【基本操作】").setStyle(ButtonStyle.Secondary).setDisabled(true),
     new ButtonBuilder().setCustomId("vc_rename").setLabel("✏️ 部屋名変更").setStyle(ButtonStyle.Primary),
     new ButtonBuilder()
       .setCustomId("vc_toggle_lock")
       .setLabel(locked ? "🔓 ロック解除" : "🔒 ロックする")
       .setStyle(locked ? ButtonStyle.Danger : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("vc_settings_btn").setLabel("🛡️ 部屋制限").setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary),
   );
 
-  // Row 2: 人数上限
-  const lStyle = (n) => userLimit === n ? ButtonStyle.Success : ButtonStyle.Secondary;
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("label_limit").setLabel("【人数制限】").setStyle(ButtonStyle.Secondary).setDisabled(true),
-    new ButtonBuilder().setCustomId("vc_limit_0").setLabel("∞ 無制限").setStyle(lStyle(0)),
-    new ButtonBuilder().setCustomId("vc_limit_4").setLabel("4人").setStyle(lStyle(4)),
-    new ButtonBuilder().setCustomId("vc_limit_5").setLabel("5人").setStyle(lStyle(5)),
-    new ButtonBuilder().setCustomId("vc_limit_custom").setLabel("指定...").setStyle(ButtonStyle.Primary),
-  );
+  const components = [row1];
 
-  // Row 3: 性別制限
-  const gStyle = (m) => gender === m ? ButtonStyle.Success : ButtonStyle.Secondary;
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("label_gender").setLabel("【性別制限】").setStyle(ButtonStyle.Secondary).setDisabled(true),
-    new ButtonBuilder().setCustomId("vc_gender_none").setLabel("制限なし").setStyle(gStyle(null)),
-    new ButtonBuilder().setCustomId("vc_gender_male").setLabel("♂️ 男性のみ").setStyle(gStyle("male")),
-    new ButtonBuilder().setCustomId("vc_gender_female").setLabel("♀️ 女性のみ").setStyle(gStyle("female")),
-  );
-
-  const components = [row1, row2, row3];
 
   // ロック時のみノックボタンを表示
   if (locked) {
@@ -475,6 +456,50 @@ function buildPanelPayload(vc) {
   }
 
   return { embeds: [embed], components };
+}
+
+// ─── 部屋制限サブメニューのpayloadを生成 ─────────────────────────────────────
+function buildVCSettingsPayload(vc) {
+  const gender = genderMode.get(vc.id) ?? null;
+  const userLimit = vc.userLimit ?? 0;
+  const genderLine = gender === "male" ? "♂️ 男性のみ" : gender === "female" ? "♀️ 女性のみ" : "👥 制限なし";
+  const limitLine = userLimit === 0 ? "∞ 無制限" : `${userLimit}人`;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setTitle(`🛡️ 部屋制限設定 | ${vc.name}`)
+    .setDescription(
+      `現在の設定状況:\n` +
+      `> 人数制限 ─ ${limitLine}\n` +
+      `> 性別制限 ─ ${genderLine}\n\n` +
+      `下のボタンで設定を変更できます。`
+    );
+
+  // Row 1: 性別制限
+  const gStyle = (m) => gender === m ? ButtonStyle.Success : ButtonStyle.Secondary;
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("label_g").setLabel("【性別】").setStyle(ButtonStyle.Secondary).setDisabled(true),
+    new ButtonBuilder().setCustomId("vc_gender_none").setLabel("なし").setStyle(gStyle(null)),
+    new ButtonBuilder().setCustomId("vc_gender_male").setLabel("♂️ 男性").setStyle(gStyle("male")),
+    new ButtonBuilder().setCustomId("vc_gender_female").setLabel("♀️ 女性").setStyle(gStyle("female")),
+  );
+
+  // Row 2: 人数制限
+  const lStyle = (n) => userLimit === n ? ButtonStyle.Success : ButtonStyle.Secondary;
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("label_l").setLabel("【人数】").setStyle(ButtonStyle.Secondary).setDisabled(true),
+    new ButtonBuilder().setCustomId("vc_limit_0").setLabel("∞ 無制限").setStyle(lStyle(0)),
+    new ButtonBuilder().setCustomId("vc_limit_4").setLabel("4人").setStyle(lStyle(4)),
+    new ButtonBuilder().setCustomId("vc_limit_5").setLabel("5人").setStyle(lStyle(5)),
+    new ButtonBuilder().setCustomId("vc_limit_custom").setLabel("指定...").setStyle(ButtonStyle.Primary),
+  );
+
+  // Row 3: 戻る
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("vc_main_panel").setLabel("⬅️ 戻る").setStyle(ButtonStyle.Secondary)
+  );
+
+  return { embeds: [embed], components: [row1, row2, row3] };
 }
 
 // ─── コントロールパネルを初回送信（VC内テキストに投稿） ──────────────────────
@@ -705,6 +730,26 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
+  // ── ボタン：部屋制限サブメニュー表示 ────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "vc_settings_btn") {
+    const vc = interaction.member.voice.channel;
+    if (!vc || !tempChannels.has(vc.id)) { await interaction.deferUpdate(); return; }
+    if (vcOwners.get(vc.id) !== interaction.user.id) { await interaction.deferUpdate(); return; }
+
+    await interaction.update(buildVCSettingsPayload(vc));
+    return;
+  }
+
+  // ── ボタン：メインパネルに戻る ──────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "vc_main_panel") {
+    const vc = interaction.member.voice.channel;
+    if (!vc || !tempChannels.has(vc.id)) { await interaction.deferUpdate(); return; }
+    if (vcOwners.get(vc.id) !== interaction.user.id) { await interaction.deferUpdate(); return; }
+
+    await interaction.update(buildPanelPayload(vc));
+    return;
+  }
+
   // ── ボタン：性別制限（男性のみ / 女性のみ / 制限なし）────────────────────
   if (interaction.isButton() && ["vc_gender_male", "vc_gender_female", "vc_gender_none"].includes(interaction.customId)) {
     const vc = interaction.member.voice.channel;
@@ -721,8 +766,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (mode === null) { genderMode.delete(vc.id); } else { genderMode.set(vc.id, mode); }
 
-    // パネルをインタラクションで即時更新（deferUpdateより先に呼ぶ）
-    await updatePanelViaInteraction(interaction, vc);
+    // サブパネルを即時更新
+    await interaction.update(buildVCSettingsPayload(vc));
 
     // 権限更新：性別ロールでViewChannel+Connectを制御
     // 方針: everyoneをdenyにして、対象ロールだけallowにする。
@@ -771,7 +816,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const limit = parseInt(interaction.customId.replace("vc_limit_", ""), 10);
     await vc.setUserLimit(limit);
-    await updatePanelViaInteraction(interaction, vc);
+    await interaction.update(buildVCSettingsPayload(vc));
     console.log(`[Limit] 人数上限変更: ${limit === 0 ? "無制限" : limit + "人"} (${vc.name})`);
     return;
   }
