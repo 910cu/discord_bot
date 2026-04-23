@@ -203,17 +203,29 @@ async function setupSettingsPanel(overrideId) {
   const meta = bumpPanelVersion(), updated = new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", hour12: false });
   let desc = `-# Version ${meta.version}.0.0 ｜ System: Operational\n\n`;
 
+  // 1. VC内機能の設定
+  desc += `### 🎙️ VC内機能の設定 [Voice Features]\n`;
+  desc += `> AFK: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n`;
+  desc += `> 自己紹介表示: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n`;
+  desc += `> 部屋制限: ♂️ ${roles.male ? `<@&${roles.male}>` : "未設定"} / ♀️ ${roles.female ? `<@&${roles.female}>` : "未設定"}\n\n`;
+
+  // 2. VC作成用チャンネルの設定
+  desc += `### 📺 VC作成用チャンネルの設定 [Channel Config]\n`;
+  desc += `> パネル設置場所: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n`;
+  desc += `> VC自動作成: ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n\n`;
+
+  // 3. 自己紹介未提出者整理
   if (features.introKickEnabled) {
-    desc += `### 📝 自己紹介未提出者整理 [Profile Guard]\n> 確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n> 警告/実行: ${dynamicVC.introWarnMinutes ?? 2880}分 / ${dynamicVC.introKickMinutes ?? 4320}分後\n\n`;
+    desc += `### 📝 自己紹介未提出者整理 [Profile Guard]\n`;
+    desc += `> 確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n`;
+    desc += `> 警告/実行: ${dynamicVC.introWarnMinutes ?? 2880}分 / ${dynamicVC.introKickMinutes ?? 4320}分後\n\n`;
   }
-  desc += `### 📺 VC作成用チャンネルの設定 [Channel Config]\n> パネル設置場所: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n> VC自動作成: ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n\n`;
-  desc += `### 🎙️ VC内機能の設定 [Voice Features]\n> AFK / 自己紹介表示 / 部屋制限\n\n`;
 
   const embed = createEmbed(desc).setTitle("⬛ DIS COORDE | Control Panel").setFooter({ text: `Last Updated: ${updated} (JST)` });
   const rows = [
     createRow(createBtn("cfg_btn_afk", "💤 AFK設定"), createBtn("cfg_btn_intro_display", "🖼️ VC内自己紹介表示"), createBtn("cfg_btn_vc", "🚻 部屋制限設定")),
-    createRow(createBtn("cfg_btn_panel", "🛠️ パネル設置場所"), createBtn("cfg_btn_trigger", "➕ VC自動作成"), createBtn("cfg_btn_intro_kick", "📝 自己紹介未提出者整理")),
-    createRow(createBtn("config_messages", "💬 メッセージ設定"))
+    createRow(createBtn("cfg_btn_panel", "🛠️ パネル設置場所"), createBtn("cfg_btn_trigger", "➕ VC自動作成")),
+    createRow(createBtn("cfg_btn_intro_kick", "📝 自己紹介未提出者整理"), createBtn("config_messages", "💬 メッセージ設定"))
   ];
   await channel.send({ embeds: [embed], components: rows });
 }
@@ -224,6 +236,20 @@ async function setupSettingsPanel(overrideId) {
 function getMainSettingsPayload() {
   let description = ``;
 
+  // 1. VC内機能の設定
+  description += `### 🎙️ VC内機能の設定 [Voice Features]\n`;
+  description += `-# AFK / 自己紹介表示 / 部屋制限 の設定です。\n`;
+  description += `> AFK: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n`;
+  description += `> 自己紹介表示: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n`;
+  description += `> 部屋制限: ♂️ ${roles.male ? `<@&${roles.male}>` : "未設定"} / ♀️ ${roles.female ? `<@&${roles.female}>` : "未設定"}\n\n`;
+
+  // 2. VC作成用チャンネルの設定
+  description += `### 📺 VC作成用チャンネルの設定 [Channel Config]\n`;
+  description += `-# VC作成パネルの設置場所や、自動作成のトリガーとなるVCの設定です。\n`;
+  description += `> パネル設置 ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n`;
+  description += `> VC自動作成 ─ ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n\n`;
+
+  // 3. 自己紹介未提出者整理
   if (features.introKickEnabled) {
     description += `### 📝 自己紹介未提出者整理 [Profile Guard]\n`;
     description += `-# 未提出者への警告や自動キックの設定です。\n`;
@@ -231,14 +257,6 @@ function getMainSettingsPayload() {
     description += `> 警告 ─ 参加から ${dynamicVC.introWarnMinutes ?? 2880} 分後\n`;
     description += `> 実行 ─ 参加から ${dynamicVC.introKickMinutes ?? 4320} 分後\n\n`;
   }
-
-  description += `### 📺 VC作成用チャンネルの設定 [Channel Config]\n`;
-  description += `-# VC作成パネルの設置場所や、自動作成のトリガーとなるVCの設定です。\n`;
-  description += `> パネル設置 ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n`;
-  description += `> VC自動作成 ─ ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n\n`;
-
-  description += `### 🎙️ VC内機能の設定 [Voice Features]\n`;
-  description += `-# AFK / 自己紹介表示 / 部屋制限 の設定です。\n`;
 
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
@@ -253,11 +271,11 @@ function getMainSettingsPayload() {
 
   const row2 = createRow(
     createBtn("cfg_btn_panel", "🛠️ パネル設置場所"),
-    createBtn("cfg_btn_trigger", "➕ VC自動作成"),
-    createBtn("cfg_btn_intro_kick", "📝 自己紹介未提出者整理")
+    createBtn("cfg_btn_trigger", "➕ VC自動作成")
   );
 
   const row3 = createRow(
+    createBtn("cfg_btn_intro_kick", "📝 自己紹介未提出者整理"),
     createBtn("config_messages", "💬 メッセージ設定")
   );
 
