@@ -377,27 +377,19 @@ const zmoveCommand = {
 const setupCommand = {
   data: new SlashCommandBuilder()
     .setName("setup")
-    .setDescription("このチャンネルを設定パネルのチャンネルとして登録します")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
   async execute(interaction) {
-    // index.js 側の setupSettingsPanel を呼ぶためにイベントを発火
-    // チャンネルIDを config.json に保存して setupSettingsPanel を再実行
-    const fs = require("fs");
-    const configPath = "./config.json";
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    config.settingsChannelId = interaction.channelId;
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    const row = new ActionRowBuilder().addComponents(
+      new ChannelSelectMenuBuilder()
+        .setCustomId("select_setup_channel_initial")
+        .setPlaceholder("設置先のテキストチャンネルを選択してください")
+        .setChannelTypes([ChannelType.GuildText])
+    );
 
-    await interaction.reply({ content: "✅ このチャンネルを設定チャンネルとして登録しました。パネルを設置します…", ephemeral: true });
-
-    // index.js でエクスポートされた setupSettingsPanel を呼ぶ
-    // （グローバルに登録しておく方式）
-    if (typeof global.__setupSettingsPanel === "function") {
-      await global.__setupSettingsPanel(interaction.channelId);
-    }
-
-    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+    await interaction.reply({
+      content: "🔧 **初期セットアップ**\n管理用コントロールパネルを設置するチャンネルを選んでください。\n（このメッセージはあなたにのみ表示されています）",
+      components: [row],
+      ephemeral: true
+    });
   },
 };
 
