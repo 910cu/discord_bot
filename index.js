@@ -19,7 +19,10 @@ const {
   RoleSelectMenuBuilder,
 } = require("discord.js");
 const fs = require("fs");
-const { clientId, guildId, dynamicVC, roles } = require("./config.json");
+const { clientId, guildId, dynamicVC, roles, features: featuresConfig } = require("./config.json");
+// 機能ON/OFFフラグ（config.jsonのfeaturesから読み込み、実行時に変更可能）
+const features = Object.assign({ introKickEnabled: true, genderRoleEnabled: true, vcIntroDisplayEnabled: true }, featuresConfig || {});
+
 const token = process.env.DISCORD_TOKEN;
 if (!token) {
   console.error("❌ 環境変数 DISCORD_TOKEN が設定されていません。");
@@ -152,6 +155,14 @@ async function deployCommands() {
 // ─── 設定パネルを設置 ────────────────────────────────────────────────────────
 const SETTINGS_CHANNEL_ID = "1496141555705319445";
 
+// featuresをconfig.jsonに保存するヘルパー
+function saveFeatures() {
+  const configPath = "./config.json";
+  const fileData = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  fileData.features = { ...features };
+  fs.writeFileSync(configPath, JSON.stringify(fileData, null, 2));
+}
+
 async function setupSettingsPanel() {
   const channel = client.channels.cache.get(SETTINGS_CHANNEL_ID);
   if (!channel) return;
@@ -162,41 +173,73 @@ async function setupSettingsPanel() {
     for (const m of oldMsgs.values()) await m.delete().catch(() => { });
   } catch { }
 
+  const on = "🟢 **ON**";
+  const off = "🔴 **OFF**";
+
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
     .setTitle("⚙️ BOT 設定コントロールパネル")
     .setDescription(
-      "-# 下のボタンから設定したい機能を選んでください。\n\n" +
+      "-# 各機能の設定やON/OFFを下のボタンから変更できます。\n\n" +
+
       "### 🏗️ 基本設定\n" +
-      `- 💤 **AFK** : ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "\`未設定\`"}\n` +
-      `- 🛠️ **VCパネル** : ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "\`未設定\`"}\n` +
-      `- ➕ **自由枠トリガー** : ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "\`未設定\`"}\n` +
-      `- 👥 **4人部屋トリガー** : ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "\`未設定\`"}\n` +
-      `- 👥 **5人部屋トリガー** : ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "\`未設定\`"}\n\n` +
-      "### 📝 自己紹介機能\n" +
-      `- 📝 **期限確認チャンネル** : ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "\`未設定\`"}\n` +
-      `- 📋 **VC表示用チャンネル** : ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "\`未設定\`"}\n` +
-      `- ⚠️ **警告タイミング** : ${dynamicVC.introWarnMinutes ? `\`${dynamicVC.introWarnMinutes}\` 分後` : "\`2880\` 分後 (2日)"}\n` +
-      `- 🚪 **キックタイミング** : ${dynamicVC.introKickMinutes ? `\`${dynamicVC.introKickMinutes}\` 分後` : "\`4320\` 分後 (3日)"}\n\n` +
-      "### 🎙️ VC機能\n" +
-      `- ♂️ **男性ロール** : ${roles.male ? `<@&${roles.male}>` : "\`未設定\`"}\n` +
-      `- ♀️ **女性ロール** : ${roles.female ? `<@&${roles.female}>` : "\`未設定\`"}`
+      "-# VCの作成・管理に必要なチャンネルとトリガーの設定です。\n" +
+      `- 💤 **AFK（寝落ち移動先）** : ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n` +
+      `- 🛠️ **VC作成パネル** : ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n` +
+      `- ➕ **自由枠トリガー** : ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n` +
+      `- 👥 **4人部屋トリガー** : ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"}\n` +
+      `- 👥 **5人部屋トリガー** : ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}\n\n` +
+
+      `### 📝 自己紹介機能 ─ ${features.introKickEnabled ? on : off}\n` +
+      "-# 参加後に自己紹介を書かないメンバーへの警告・自動キック機能です。\n" +
+      `- 📝 **期限確認チャンネル** : ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
+      `-# 　↑ このチャンネルに書いた人を「自己紹介済み」として記録します。\n` +
+      `- 📋 **VC表示用チャンネル** : ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n` +
+      `-# 　↑ VCに入った時、このチャンネルの自己紹介文がVC内に自動表示されます。\n` +
+      `- ⚠️ **警告タイミング** : 参加から \`${dynamicVC.introWarnMinutes ?? 2880}\` 分後\n` +
+      `- 🚪 **キックタイミング** : 参加から \`${dynamicVC.introKickMinutes ?? 4320}\` 分後\n\n` +
+
+      `### 🖼️ VC内自己紹介表示 ─ ${features.vcIntroDisplayEnabled ? on : off}\n` +
+      "-# VCに入室した際、その人の自己紹介をVC内テキストに自動投稿する機能です。\n\n" +
+
+      `### 🚻 VC性別制限機能 ─ ${features.genderRoleEnabled ? on : off}\n` +
+      "-# VC部屋主が「♂️ 男性のみ」「♀️ 女性のみ」に設定できる機能です。\n" +
+      "-# ロールが付いていないメンバーは入室時に自動でキックされます。\n" +
+      `- ♂️ **男性ロール** : ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
+      `- ♀️ **女性ロール** : ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
     );
 
-  // Row 1: 基本設定
+  // Row 1: 詳細設定ボタン
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("cfg_btn_basic").setLabel("🏗️ 基本設定").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("cfg_btn_intro").setLabel("📝 自己紹介機能").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("cfg_btn_vc").setLabel("🎙️ VC機能").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("cfg_btn_intro").setLabel("📝 自己紹介機能").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("cfg_btn_vc").setLabel("🚻 VC機能").setStyle(ButtonStyle.Secondary),
   );
 
-  // Row 2: メッセージ設定
+  // Row 2: ON/OFFトグル
   const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("config_messages").setLabel("💬 メッセージ設定").setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("toggle_intro_kick")
+      .setLabel(features.introKickEnabled ? "📝 自己紹介キック: ON → OFF" : "📝 自己紹介キック: OFF → ON")
+      .setStyle(features.introKickEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("toggle_vc_intro")
+      .setLabel(features.vcIntroDisplayEnabled ? "🖼️ VC内表示: ON → OFF" : "🖼️ VC内表示: OFF → ON")
+      .setStyle(features.vcIntroDisplayEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("toggle_gender")
+      .setLabel(features.genderRoleEnabled ? "🚻 性別制限: ON → OFF" : "🚻 性別制限: OFF → ON")
+      .setStyle(features.genderRoleEnabled ? ButtonStyle.Danger : ButtonStyle.Success),
   );
 
-  await channel.send({ embeds: [embed], components: [row1, row2] });
+  // Row 3: メッセージ設定
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("config_messages").setLabel("💬 メッセージ設定").setStyle(ButtonStyle.Primary),
+  );
+
+  await channel.send({ embeds: [embed], components: [row1, row2, row3] });
 }
+
 
 // ─── VC作成パネルをテキストチャンネルに設置 ──────────────────────────────────
 async function setupCreatePanel() {
@@ -989,7 +1032,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
   }
 
 
+  // ── ON/OFFトグル：自己紹介キック機能 ────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "toggle_intro_kick") {
+    features.introKickEnabled = !features.introKickEnabled;
+    saveFeatures();
+    await interaction.reply({ content: `✅ 自己紹介キック機能を **${features.introKickEnabled ? "🟢 ON" : "🔴 OFF"}** にしました。`, ephemeral: true });
+    setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
+    await setupSettingsPanel();
+    return;
+  }
+
+  // ── ON/OFFトグル：VC内自己紹介表示 ─────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "toggle_vc_intro") {
+    features.vcIntroDisplayEnabled = !features.vcIntroDisplayEnabled;
+    saveFeatures();
+    await interaction.reply({ content: `✅ VC内自己紹介表示を **${features.vcIntroDisplayEnabled ? "🟢 ON" : "🔴 OFF"}** にしました。`, ephemeral: true });
+    setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
+    await setupSettingsPanel();
+    return;
+  }
+
+  // ── ON/OFFトグル：性別制限機能 ──────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "toggle_gender") {
+    features.genderRoleEnabled = !features.genderRoleEnabled;
+    saveFeatures();
+    await interaction.reply({ content: `✅ VC性別制限機能を **${features.genderRoleEnabled ? "🟢 ON" : "🔴 OFF"}** にしました。`, ephemeral: true });
+    setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
+    await setupSettingsPanel();
+    return;
+  }
+
   // ── セレクトメニューの選択処理 ────────────────────────────────────────────
+
   if (interaction.isAnySelectMenu() && interaction.customId.startsWith("select_cfg_")) {
     const field = interaction.customId.replace("select_cfg_", "");
     const selectedId = interaction.values[0];
@@ -1230,7 +1304,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
     // ── 性別制限チェック（部屋主は除外）────────────────────────────────────
     const gender = genderMode.get(vc.id) ?? null;
-    if (gender && vcOwners.get(vc.id) !== member.id) {
+    if (features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== member.id) {
       const requiredRoleId = gender === "male" ? roles.male : roles.female;
       if (!member.roles.cache.has(requiredRoleId)) {
         try {
@@ -1284,6 +1358,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
     // ロックなし・または入室許可済み → 通常入室（プロフィール等表示）
     if (oldState.channelId !== newState.channelId) {
+      if (features.vcIntroDisplayEnabled) {  // VC内自己紹介表示機能が有効な時のみ実行
       const introDBPath = "./introDB.json";
       if (fs.existsSync(introDBPath)) {
         const db = JSON.parse(fs.readFileSync(introDBPath, "utf-8"));
@@ -1306,6 +1381,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
             } catch (err) { }
           }
         }
+      }
       }
     }
   }
@@ -1557,6 +1633,7 @@ async function syncAndCheckIntros(guild) {
 
       for (const member of members.values()) {
         if (member.user.bot) continue;
+        if (!features.introKickEnabled) continue;  // 自己紹介キック機能がオフの場合はスキップ
         const data = currentDB[member.id] || {};
         if (data.introduced) continue;
 

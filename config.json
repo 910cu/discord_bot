@@ -23,5 +23,10 @@
   "roles": {
     "male": "1493657341881749726",
     "female": "1493657172033278039"
+  },
+  "features": {
+    "introKickEnabled": true,
+    "genderRoleEnabled": true,
+    "vcIntroDisplayEnabled": true
   }
 }
