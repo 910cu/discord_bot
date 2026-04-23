@@ -206,12 +206,13 @@ async function setupSettingsPanel(overrideId) {
   if (features.introKickEnabled) {
     desc += `### 📝 自己紹介未提出者整理 [Profile Guard]\n> 確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n> 警告/実行: ${dynamicVC.introWarnMinutes ?? 2880}分 / ${dynamicVC.introKickMinutes ?? 4320}分後\n\n`;
   }
-  desc += `### 📺 チャンネル設定 [Channel Config]\n> 作成パネル / 自動作成トリガー\n\n`;
-  desc += `### 🎙️ VC内機能設定 [Voice Features]\n> AFK / 自己紹介表示 / 部屋制限\n\n`;
+  desc += `### 📺 VC作成用チャンネルの設定 [Channel Config]\n> パネル設置場所: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n> VC自動作成: ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n\n`;
+  desc += `### 🎙️ VC内機能の設定 [Voice Features]\n> AFK / 自己紹介表示 / 部屋制限\n\n`;
 
   const embed = createEmbed(desc).setTitle("⬛ DIS COORDE | Control Panel").setFooter({ text: `Last Updated: ${updated} (JST)` });
   const rows = [
-    createRow(createBtn("cfg_btn_vc_sub", "🎙️ VC機能設定"), createBtn("cfg_btn_chan_sub", "📺 チャンネル設定"), createBtn("cfg_btn_intro_kick", "📝 自己紹介未提出者整理")),
+    createRow(createBtn("cfg_btn_afk", "💤 AFK設定"), createBtn("cfg_btn_intro_display", "🖼️ VC内自己紹介表示"), createBtn("cfg_btn_vc", "🚻 部屋制限設定")),
+    createRow(createBtn("cfg_btn_panel", "🛠️ パネル設置場所"), createBtn("cfg_btn_trigger", "➕ VC自動作成"), createBtn("cfg_btn_intro_kick", "📝 自己紹介未提出者整理")),
     createRow(createBtn("config_messages", "💬 メッセージ設定"))
   ];
   await channel.send({ embeds: [embed], components: rows });
@@ -231,10 +232,12 @@ function getMainSettingsPayload() {
     description += `> 実行 ─ 参加から ${dynamicVC.introKickMinutes ?? 4320} 分後\n\n`;
   }
 
-  description += `### 📺 チャンネル設定 [Channel Config]\n`;
-  description += `-# VC作成パネルの設置場所や、作成トリガーとなるVCの設定です。\n\n`;
+  description += `### 📺 VC作成用チャンネルの設定 [Channel Config]\n`;
+  description += `-# VC作成パネルの設置場所や、自動作成のトリガーとなるVCの設定です。\n`;
+  description += `> パネル設置 ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n`;
+  description += `> VC自動作成 ─ ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n\n`;
 
-  description += `### 🎙️ VC内機能設定 [Voice Features]\n`;
+  description += `### 🎙️ VC内機能の設定 [Voice Features]\n`;
   description += `-# AFK / 自己紹介表示 / 部屋制限 の設定です。\n`;
 
   const embed = new EmbedBuilder()
@@ -243,84 +246,22 @@ function getMainSettingsPayload() {
     .setDescription(description || "（有効な機能がありません）");
 
   const row1 = createRow(
-    createBtn("cfg_btn_vc_sub", "🎙️ VC機能設定"),
-    createBtn("cfg_btn_chan_sub", "📺 チャンネル設定"),
-    createBtn("cfg_btn_intro_kick", "📝 自己紹介未提出者整理")
+    createBtn("cfg_btn_afk", "💤 AFK設定"),
+    createBtn("cfg_btn_intro_display", "🖼️ VC内自己紹介表示"),
+    createBtn("cfg_btn_vc", "🚻 部屋制限設定")
   );
 
   const row2 = createRow(
+    createBtn("cfg_btn_panel", "🛠️ パネル設置場所"),
+    createBtn("cfg_btn_trigger", "➕ VC自動作成"),
+    createBtn("cfg_btn_intro_kick", "📝 自己紹介未提出者整理")
+  );
+
+  const row3 = createRow(
     createBtn("config_messages", "💬 メッセージ設定")
   );
 
-  return { content: null, embeds: [embed], components: [row1, row2], ephemeral: true };
-}
-
-function getChanSubSettingsPayload() {
-  let description = `### 📺 チャンネル設定 [Channel Config]\n`;
-  description += `-# VC作成の起点となる場所の設定です。\n\n`;
-
-  if (features.vcPanelEnabled) {
-    description += `### 🛠️ VC作成パネルの設置\n`;
-    description += `-# 「新しい通話を作成」などのボタンを表示するテキストチャンネルです。\n`;
-    description += `> 設置先 ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n\n`;
-  }
-
-  if (features.vcCreationEnabled) {
-    description += `### ➕ VC自動作成のトリガー\n`;
-    description += `-# 入室すると自動的に専用のVCが作成されるボイスチャンネルです。\n`;
-    description += `> 自由枠 ─ ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n`;
-    description += `> 4人部屋 ─ ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"}\n`;
-    description += `> 5人部屋 ─ ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}\n\n`;
-  }
-
-  const embed = new EmbedBuilder()
-    .setColor(0x2b2d31)
-    .setTitle("📺 チャンネル設定")
-    .setDescription(description || "（有効な機能がありません）");
-
-  const row1 = createRow(
-    createBtn("cfg_btn_panel", "🛠️ パネル設置場所"),
-    createBtn("cfg_btn_trigger", "➕ 自動作成トリガー")
-  );
-  const row2 = createRow(createBtn("cfg_back_main", "⬅️ 戻る"));
-
-  return { content: null, embeds: [embed], components: [row1, row2], ephemeral: true };
-}
-
-function getVCSubSettingsPayload() {
-  let description = `### 🎙️ VC内機能設定 [Voice Features]\n`;
-  description += `-# ボイスチャンネル内での動作に関する設定です。\n\n`;
-
-  if (features.afkEnabled) {
-    description += `### 💤 AFK設定\n`;
-    description += `> 移動先 ─ ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n\n`;
-  }
-
-  if (features.vcIntroDisplayEnabled) {
-    description += `### 🖼️ VC内自己紹介表示\n`;
-    description += `-# 入室時に自己紹介文をVC内テキストへ自動転送します。\n`;
-    description += `> 表示用ソース ─ ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n\n`;
-  }
-
-  if (features.genderRoleEnabled) {
-    description += `### 🚻 部屋制限\n`;
-    description += `-# 性別ロールによる入室制限の設定です。\n`;
-    description += `> ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定`"} / ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n`;
-  }
-
-  const embed = new EmbedBuilder()
-    .setColor(0x2b2d31)
-    .setTitle("🎙️ VC内機能設定")
-    .setDescription(description || "（有効な機能がありません）");
-
-  const row1 = createRow(
-    createBtn("cfg_btn_afk", "💤 AFK設定"),
-    createBtn("cfg_btn_intro_display", "🖼️ VC内自己紹介表示"),
-    createBtn("cfg_btn_vc", "🚻 部屋制限")
-  );
-  const row2 = createRow(createBtn("cfg_back_main", "⬅️ 戻る"));
-
-  return { content: null, embeds: [embed], components: [row1, row2], ephemeral: true };
+  return { content: null, embeds: [embed], components: [row1, row2, row3], ephemeral: true };
 }
 
 function getAFKSettingsPayload() {
@@ -329,7 +270,7 @@ function getAFKSettingsPayload() {
   const rows = [
     createRow(createBtn("toggle_afk", `AFK機能: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_afk").setPlaceholder(en ? "移動先を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!en)),
-    createRow(createBtn("cfg_back_vc_sub", "⬅️ 戻る"))
+    createRow(createBtn("cfg_back_main", "⬅️ 戻る"))
   ];
   return { embeds: [createEmbed(desc, 0x2b2d31, "💤 AFK設定")], components: rows, ephemeral: true };
 }
@@ -339,7 +280,7 @@ function getPanelSettingsPayload() {
   const rows = [
     createRow(createBtn("toggle_panel", `パネル機能: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_panel").setPlaceholder(en ? "設置先を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildText]).setDisabled(!en)),
-    createRow(createBtn("cfg_back_chan_sub", "⬅️ 戻る"))
+    createRow(createBtn("cfg_back_main", "⬅️ 戻る"))
   ];
   return { embeds: [createEmbed(desc, 0x2b2d31, "🛠️ パネル設置場所")], components: rows, ephemeral: true };
 }
@@ -351,7 +292,7 @@ function getVCCreationSettingsPayload() {
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger").setPlaceholder(en ? "自由枠を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!en)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger4").setPlaceholder(en ? "4人部屋を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!en)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger5").setPlaceholder(en ? "5人部屋を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!en)),
-    createRow(createBtn("cfg_back_chan_sub", "⬅️ 戻る"))
+    createRow(createBtn("cfg_back_main", "⬅️ 戻る"))
   ];
   return { embeds: [createEmbed(desc, 0x2b2d31, "➕ VC自動作成設定")], components: rows, ephemeral: true };
 }
@@ -371,7 +312,7 @@ function getIntroDisplaySettingsPayload() {
   const rows = [
     createRow(createBtn("toggle_vc_intro", `表示: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_introsource").setPlaceholder(en ? "ソースを選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildText]).setDisabled(!en)),
-    createRow(createBtn("cfg_back_vc_sub", "⬅️ 戻る"))
+    createRow(createBtn("cfg_back_main", "⬅️ 戻る"))
   ];
   return { embeds: [createEmbed(desc, 0x5865f2, "🖼️ VC内表示設定")], components: rows, ephemeral: true };
 }
@@ -382,7 +323,7 @@ function getVCSettingsPayload() {
     createRow(createBtn("toggle_gender", `部屋制限: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new RoleSelectMenuBuilder().setCustomId("select_cfg_male").setPlaceholder(en ? "♂️ 男性を選択" : "⛔ 無効").setDisabled(!en)),
     createRow(new RoleSelectMenuBuilder().setCustomId("select_cfg_female").setPlaceholder(en ? "♀️ 女性を選択" : "⛔ 無効").setDisabled(!en)),
-    createRow(createBtn("cfg_back_vc_sub", "⬅️ 戻る"))
+    createRow(createBtn("cfg_back_main", "⬅️ 戻る"))
   ];
   return { embeds: [createEmbed(desc, 0x57f287, "🎙️ 部屋制限設定")], components: rows, ephemeral: true };
 }
@@ -1071,21 +1012,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // ── ⬅️ チャンネル設定サブフォルダへ戻る ──────────────────────────────
-  if (interaction.isButton() && interaction.customId === "cfg_back_chan_sub") {
-    await interaction.update(getChanSubSettingsPayload());
-    return;
-  }
-
-  // ── 🎙️ VC機能設定（サブフォルダ） ──────────────────────────────────
+  // ── 🎙️ VC内機能の設定 ──────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_vc_sub") {
-    await interaction.update(getVCSubSettingsPayload());
-    return;
-  }
-
-  // ── 📺 チャンネル設定（サブフォルダ） ──────────────────────────────────
-  if (interaction.isButton() && interaction.customId === "cfg_btn_chan_sub") {
-    await interaction.update(getChanSubSettingsPayload());
+    // ※サブフォルダ廃止のため、現在は使用されませんが、ボタンIDの互換性のために残すか、削除します。
+    // 今回はフラット化したのでgetMainに戻るか、何もしない。
+    await interaction.update(getMainSettingsPayload());
     return;
   }
 
