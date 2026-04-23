@@ -231,44 +231,89 @@ async function setupSettingsPanel() {
   // 詳細設定ボタン
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("cfg_btn_basic").setLabel("🏗️ 基本設定").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("cfg_btn_intro").setLabel("📝 自己紹介機能").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("cfg_btn_vc").setLabel("🚻 VC機能").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("cfg_btn_trigger").setLabel("➕ VCトリガー").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("cfg_btn_intro_kick").setLabel("📝 自己紹介キック").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId("cfg_btn_intro_display").setLabel("🖼️ 自己紹介表示").setStyle(ButtonStyle.Secondary),
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId("cfg_btn_vc").setLabel("🚻 性別制限").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("config_messages").setLabel("💬 メッセージ").setStyle(ButtonStyle.Secondary),
   );
 
-  await channel.send({ embeds: [embed], components: [row1] });
+  await channel.send({ embeds: [embed], components: [row1, row2] });
 }
+
 
 
 // ─── サブパネル用ペイロード生成 ──────────────────────────────────────────────
 
-function getIntroSettingsPayload() {
+// ─── サブパネル用ペイロード生成 ──────────────────────────────────────────────
+
+function getBasicSettingsPayload() {
+  const embed = new EmbedBuilder()
+    .setTitle("🏗️ 基本設定")
+    .setDescription(
+      `現在の設定:\n` +
+      `- 💤 AFK: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n` +
+      `- 🛠️ VCパネル: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}`
+    )
+    .setColor(0x2b2d31);
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_afk").setPlaceholder("💤 AFKチャンネルを選択").setChannelTypes([ChannelType.GuildVoice])
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_panel").setPlaceholder("🛠️ VCパネル設置チャンネルを選択").setChannelTypes([ChannelType.GuildText])
+  );
+
+  return { embeds: [embed], components: [row1, row2], ephemeral: true };
+}
+
+function getTriggerSettingsPayload() {
+  const embed = new EmbedBuilder()
+    .setTitle("➕ VCトリガー設定")
+    .setDescription(
+      `現在の設定:\n` +
+      `- 自由枠トリガー: ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n` +
+      `- 4人部屋トリガー: ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"}\n` +
+      `- 5人部屋トリガー: ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}`
+    )
+    .setColor(0x2b2d31);
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger").setPlaceholder("➕ 自由枠トリガーを選択").setChannelTypes([ChannelType.GuildVoice])
+  );
+  const row2 = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger4").setPlaceholder("👥 4人部屋トリガーを選択").setChannelTypes([ChannelType.GuildVoice])
+  );
+  const row3 = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger5").setPlaceholder("👥 5人部屋トリガーを選択").setChannelTypes([ChannelType.GuildVoice])
+  );
+
+  return { embeds: [embed], components: [row1, row2, row3], ephemeral: true };
+}
+
+function getIntroKickSettingsPayload() {
   const on = "🟩";
   const off = "🟥";
 
   const embed = new EmbedBuilder()
-    .setTitle("📝 自己紹介機能 設定")
+    .setTitle("📝 自己紹介キック機能 設定")
     .setDescription(
-      `現在のステータス:\n` +
-      `- 自動キック: ${features.introKickEnabled ? on : off}\n` +
-      `- VC内表示: ${features.vcIntroDisplayEnabled ? on : off}\n\n` +
+      `現在のステータス: ${features.introKickEnabled ? on : off}\n\n` +
       `詳細設定:\n` +
-      `- 📝 期限確認チャンネル: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
-      `- 📋 VC表示用チャンネル: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n` +
-      `- ⚠️ 警告タイミング: ${dynamicVC.introWarnMinutes ? `\`${dynamicVC.introWarnMinutes}\` 分後` : "`2880` 分後 (2日)"}\n` +
-      `- 🚪 キックタイミング: ${dynamicVC.introKickMinutes ? `\`${dynamicVC.introKickMinutes}\` 分後` : "`4320` 分後 (3日)"}`
+      `- 📝 提出確認チャンネル: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n` +
+      `- ⚠️ 警告タイミング: ${dynamicVC.introWarnMinutes ? `\`${dynamicVC.introWarnMinutes}\` 分後` : "`2880` 分後"}\n` +
+      `- 🚪 キックタイミング: ${dynamicVC.introKickMinutes ? `\`${dynamicVC.introKickMinutes}\` 分後` : "`4320` 分後"}`
     )
     .setColor(0x5865f2);
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("toggle_intro_kick")
-      .setLabel("自動キック")
+      .setLabel(`自動キック: ${features.introKickEnabled ? "有効" : "無効"}`)
       .setStyle(features.introKickEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId("toggle_vc_intro")
-      .setLabel("VC内表示")
-      .setStyle(features.vcIntroDisplayEnabled ? ButtonStyle.Success : ButtonStyle.Danger),
     new ButtonBuilder()
       .setCustomId("config_intro_time")
       .setLabel("⏱️ 期限タイミング設定")
@@ -276,13 +321,37 @@ function getIntroSettingsPayload() {
   );
 
   const row2 = new ActionRowBuilder().addComponents(
-    new ChannelSelectMenuBuilder().setCustomId("select_cfg_introcheck").setPlaceholder("📝 期限確認用チャンネルを選択").setChannelTypes([ChannelType.GuildText])
-  );
-  const row3 = new ActionRowBuilder().addComponents(
-    new ChannelSelectMenuBuilder().setCustomId("select_cfg_introsource").setPlaceholder("📋 VC表示用チャンネルを選択").setChannelTypes([ChannelType.GuildText])
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_introcheck").setPlaceholder("📝 提出確認用チャンネルを選択").setChannelTypes([ChannelType.GuildText])
   );
 
-  return { embeds: [embed], components: [row1, row2, row3], ephemeral: true };
+  return { embeds: [embed], components: [row1, row2], ephemeral: true };
+}
+
+function getIntroDisplaySettingsPayload() {
+  const on = "🟩";
+  const off = "🟥";
+
+  const embed = new EmbedBuilder()
+    .setTitle("🖼️ VC内自己紹介表示機能 設定")
+    .setDescription(
+      `現在のステータス: ${features.vcIntroDisplayEnabled ? on : off}\n\n` +
+      `詳細設定:\n` +
+      `- 📋 表示用ソースチャンネル: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}`
+    )
+    .setColor(0x5865f2);
+
+  const row1 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("toggle_vc_intro")
+      .setLabel(`VC内表示: ${features.vcIntroDisplayEnabled ? "有効" : "無効"}`)
+      .setStyle(features.vcIntroDisplayEnabled ? ButtonStyle.Success : ButtonStyle.Danger)
+  );
+
+  const row2 = new ActionRowBuilder().addComponents(
+    new ChannelSelectMenuBuilder().setCustomId("select_cfg_introsource").setPlaceholder("📋 表示用ソースチャンネルを選択").setChannelTypes([ChannelType.GuildText])
+  );
+
+  return { embeds: [embed], components: [row1, row2], ephemeral: true };
 }
 
 function getVCSettingsPayload() {
@@ -292,8 +361,7 @@ function getVCSettingsPayload() {
   const embed = new EmbedBuilder()
     .setTitle("🎙️ VC機能 設定")
     .setDescription(
-      `現在のステータス:\n` +
-      `- 性別制限機能: ${features.genderRoleEnabled ? on : off}\n\n` +
+      `現在のステータス: ${features.genderRoleEnabled ? on : off}\n\n` +
       `詳細設定:\n` +
       `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n` +
       `- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`
@@ -434,12 +502,12 @@ function buildPanelPayload(vc) {
 
   // Row 1: 基本操作
   const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("vc_rename").setLabel("✏️ 部屋名変更").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("vc_rename").setLabel("✏️ 部屋名変更").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId("vc_toggle_lock")
       .setLabel(locked ? "🔓 ロック解除" : "🔒 ロックする")
       .setStyle(locked ? ButtonStyle.Danger : ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("vc_settings_btn").setLabel("🛡️ 部屋制限").setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId("vc_settings_btn").setLabel("🛡️ 部屋制限").setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId("vc_afk_prompt").setLabel("🛏️ お布団へ運ぶ").setStyle(ButtonStyle.Secondary),
   );
 
@@ -1052,45 +1120,27 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // ── 🏗️ 基本設定（AFK・VCパネル・トリガー） ────────────────────────────────
+  // ── 🏗️ 基本設定（AFK・VCパネル） ────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_basic") {
-    const row1 = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId("select_cfg_afk").setPlaceholder("💤 AFKチャンネルを選択").setChannelTypes([ChannelType.GuildVoice])
-    );
-    const row2 = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId("select_cfg_panel").setPlaceholder("🛠️ VCパネル設置チャンネルを選択").setChannelTypes([ChannelType.GuildText])
-    );
-    const row3 = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger").setPlaceholder("➕ 自由枠トリガーVCを選択").setChannelTypes([ChannelType.GuildVoice])
-    );
-    const row4 = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger4").setPlaceholder("👥 4人部屋トリガーVCを選択").setChannelTypes([ChannelType.GuildVoice])
-    );
-    const row5 = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger5").setPlaceholder("👥 5人部屋トリガーVCを選択").setChannelTypes([ChannelType.GuildVoice])
-    );
-
-    const embed = new EmbedBuilder()
-      .setTitle("🏗️ 基本設定")
-      .setDescription(
-        `現在の設定:\n` +
-        `- 💤 AFK: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n` +
-        `- 🛠️ VCパネル: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n` +
-        `- ➕ 自由枠トリガー: ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n` +
-        `- 👥 4人部屋トリガー: ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"}\n` +
-        `- 👥 5人部屋トリガー: ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}`
-      )
-      .setColor(0x2b2d31);
-
-    await interaction.reply({ embeds: [embed], components: [row1, row2, row3, row4, row5], ephemeral: true });
-    setTimeout(() => interaction.deleteReply().catch(() => { }), 60000);
+    await interaction.reply(getBasicSettingsPayload());
     return;
   }
 
-  // ── 📝 自己紹介機能（チャンネル・期限） ─────────────────────────────────────
-  if (interaction.isButton() && interaction.customId === "cfg_btn_intro") {
-    const payload = getIntroSettingsPayload();
-    await interaction.reply(payload);
+  // ── ➕ VCトリガー設定 ──────────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "cfg_btn_trigger") {
+    await interaction.reply(getTriggerSettingsPayload());
+    return;
+  }
+
+  // ── 📝 自己紹介キック機能 ──────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "cfg_btn_intro_kick") {
+    await interaction.reply(getIntroKickSettingsPayload());
+    return;
+  }
+
+  // ── 🖼️ VC内自己紹介表示機能 ───────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "cfg_btn_intro_display") {
+    await interaction.reply(getIntroDisplaySettingsPayload());
     return;
   }
 
@@ -1108,7 +1158,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isButton() && interaction.customId === "toggle_intro_kick") {
     features.introKickEnabled = !features.introKickEnabled;
     saveFeatures();
-    await interaction.update(getIntroSettingsPayload());
+    await interaction.update(getIntroKickSettingsPayload());
     await setupSettingsPanel();
     return;
   }
@@ -1117,7 +1167,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   if (interaction.isButton() && interaction.customId === "toggle_vc_intro") {
     features.vcIntroDisplayEnabled = !features.vcIntroDisplayEnabled;
     saveFeatures();
-    await interaction.update(getIntroSettingsPayload());
+    await interaction.update(getIntroDisplaySettingsPayload());
     await setupSettingsPanel();
     return;
   }
@@ -1442,10 +1492,8 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
 
               const embed = new EmbedBuilder()
                 .setColor(0x2b2d31)
-                .setTitle(`⬛ PROFILE | ${member.displayName}`)
                 .setThumbnail(member.user.displayAvatarURL())
                 .setDescription(
-                  `-# System: Profile Retrieval ｜ Database: introDB.json\n\n` +
                   `### 📝 自己紹介 / Introduction\n` +
                   `> ${data.content || "内容なし"}`
                 )
