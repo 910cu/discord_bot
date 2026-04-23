@@ -410,7 +410,7 @@ function buildPanelPayload(vc) {
   const genderLine = gender === "male" ? "♂️ 男性のみ" : gender === "female" ? "♀️ 女性のみ" : "👥 制限なし";
 
   const embed = new EmbedBuilder()
-    .setColor(locked ? 0xe74c3c : 0x2b2d31)
+    .setColor(locked ? 0xe74c3c : 0x57f287)
     .setTitle(`⬛ ROOM CONTROL | ${vc.name}`)
     .setDescription(
       `-# System: Voice Management ｜ Status: ${locked ? "LOCKED" : "OPERATIONAL"}\n\n` +
@@ -770,9 +770,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     const limit = parseInt(interaction.customId.replace("vc_limit_", ""), 10);
-    await interaction.deferUpdate();
     await vc.setUserLimit(limit);
-    await sendOrUpdateControlPanel(vc);
+    await updatePanelViaInteraction(interaction, vc);
     console.log(`[Limit] 人数上限変更: ${limit === 0 ? "無制限" : limit + "人"} (${vc.name})`);
     return;
   }
