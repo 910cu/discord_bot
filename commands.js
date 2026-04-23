@@ -377,19 +377,19 @@ const zmoveCommand = {
 const setupCommand = {
   data: new SlashCommandBuilder()
     .setName("setup")
-  async execute(interaction) {
-    const row = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId("select_setup_channel_initial")
-        .setPlaceholder("設置先のテキストチャンネルを選択してください")
-        .setChannelTypes([ChannelType.GuildText])
-    );
+    .setDescription("このチャンネルを設定パネルのチャンネルとして登録します")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-    await interaction.reply({
-      content: "🔧 **初期セットアップ**\n管理用コントロールパネルを設置するチャンネルを選んでください。\n（このメッセージはあなたにのみ表示されています）",
-      components: [row],
-      ephemeral: true
-    });
+  async execute(interaction) {
+    await interaction.reply({ content: "✅ このチャンネルを設定チャンネルとして登録しました。パネルを設置します…", ephemeral: true });
+
+    // index.js でグローバルに登録された setupSettingsPanel を呼ぶ
+    // 引数は (guildId, overrideChannelId)
+    if (typeof global.__setupSettingsPanel === "function") {
+      await global.__setupSettingsPanel(interaction.guildId, interaction.channelId);
+    }
+
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
   },
 };
 

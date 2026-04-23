@@ -31,7 +31,7 @@ function getGuildConfig(guildId) {
       console.error("[Config] 読み込みエラー:", e.message);
     }
   }
-
+  
   const defaultConfig = {
     dynamicVC: {
       triggerChannelId: null,
@@ -65,7 +65,7 @@ function getGuildConfig(guildId) {
   };
 
   if (!configs[guildId]) return defaultConfig;
-
+  
   // マージして欠落しているキーを補完
   const config = configs[guildId];
   return {
@@ -226,7 +226,7 @@ for (const cmd of allCommands) client.commands.set(cmd.data.name, cmd);
 async function deployCommands(targetGuildId = null) {
   const rest = new REST().setToken(token);
   try {
-    const route = targetGuildId
+    const route = targetGuildId 
       ? Routes.applicationGuildCommands(clientId, targetGuildId)
       : Routes.applicationGuildCommands(clientId, guildId);
 
@@ -247,7 +247,7 @@ async function deployCommands(targetGuildId = null) {
 
 async function setupSettingsPanel(guildId, overrideChannelId = null) {
   const config = getGuildConfig(guildId);
-
+  
   if (overrideChannelId) {
     config.settingsChannelId = overrideChannelId;
     saveGuildConfig(guildId, config);
@@ -257,7 +257,7 @@ async function setupSettingsPanel(guildId, overrideChannelId = null) {
 
   const channel = await client.channels.fetch(config.settingsChannelId).catch(() => null);
   if (!channel) return;
-
+  
   try {
     const msgs = await channel.messages.fetch({ limit: 10 });
     for (const m of msgs.filter(m => m.author.id === client.user.id).values()) await m.delete().catch(() => { });
@@ -580,13 +580,13 @@ function buildPanelPayload(vc) {
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, ownerId = vcOwners.get(vc.id), isLimitLocked = limitLockedVCs.has(vc.id);
   const gl = gender === "male" ? "♂️ 男性のみ" : gender === "female" ? "♀️ 女性のみ" : "👥 制限なし", ll = (vc.userLimit ?? 0) === 0 ? "∞ 無制限" : `${vc.userLimit}人`;
   const desc = `### 👑 部屋主 [Owner]\n> <@${ownerId}>\n\n▼ **設定状況 [Status]**\n> 状態 ─ ${locked ? "🔴 **LOCKED**" : "🟢 **OPEN**"}\n> 上限 ─ \`${ll}\`\n> 制限 ─ \`${gl}\`\n\n-# 🛡️ 制限・名前変更は**部屋主のみ**可\n-# 🛏️ お布団は**誰でも**可`;
-
+  
   if (isLimitLocked) return { embeds: [createEmbed(desc, locked ? 0xe74c3c : 0x57f287)], components: [createRow(createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !config.features.afkEnabled))] };
-
+  
   const row1 = createRow(
-    createBtn("vc_rename", "✏️ 部屋名変更"),
-    createBtn("vc_toggle_lock", locked ? "🔓 ロック解除" : "🔒 ロックする", locked ? ButtonStyle.Danger : ButtonStyle.Secondary),
-    createBtn("vc_settings_btn", "🛡️ 部屋制限", ButtonStyle.Secondary, !config.features.genderRoleEnabled),
+    createBtn("vc_rename", "✏️ 部屋名変更"), 
+    createBtn("vc_toggle_lock", locked ? "🔓 ロック解除" : "🔒 ロックする", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), 
+    createBtn("vc_settings_btn", "🛡️ 部屋制限", ButtonStyle.Secondary, !config.features.genderRoleEnabled), 
     createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !config.features.afkEnabled)
   );
   const components = [row1];
@@ -1258,39 +1258,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const config = getGuildConfig(gid);
     config.features[key] = !config.features[key];
     saveGuildConfig(gid, config);
-
+    
     await interaction.update(fn(gid));
     await setupSettingsPanel(gid);
-    return;
-  }
-
-  // ── 初期セットアップ用：設置チャンネル選択 ──────────────────────────────
-  if (interaction.isChannelSelectMenu() && interaction.customId === "select_setup_channel_initial") {
-    const gid = interaction.guildId;
-    const selectedChannelId = interaction.values[0];
-
-    await interaction.update({ content: `✅ <#${selectedChannelId}> を設定用チャンネルとして登録しました。パネルを設置します…`, components: [] });
-
-    if (typeof setupSettingsPanel === "function") {
-      await setupSettingsPanel(gid, selectedChannelId);
-    }
-    return;
-  }
-
-  // ── 初期セットアップ開始ボタン（GuildCreate等から） ──────────────────────────
-  if (interaction.isButton() && interaction.customId === "btn_start_setup") {
-    const row = new ActionRowBuilder().addComponents(
-      new ChannelSelectMenuBuilder()
-        .setCustomId("select_setup_channel_initial")
-        .setPlaceholder("設置先のテキストチャンネルを選択してください")
-        .setChannelTypes([ChannelType.GuildText])
-    );
-
-    await interaction.reply({
-      content: "🔧 **初期セットアップ**\n管理用コントロールパネルを設置するチャンネルを選んでください。\n（このメッセージはあなたにのみ表示されています）",
-      components: [row],
-      ephemeral: true
-    });
     return;
   }
 
@@ -1325,7 +1295,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const config = getGuildConfig(gid);
     const field = interaction.customId.replace("select_cfg_", "");
     const selected = interaction.values[0];
-
+    
     const map = {
       trigger: ["dynamicVC", "triggerChannelId", "自由枠トリガー"], trigger4: ["dynamicVC", "triggerChannelId4", "4人部屋トリガー"], trigger5: ["dynamicVC", "triggerChannelId5", "5人部屋トリガー"],
       afk: ["dynamicVC", "afkChannelId", "AFKチャンネル"], panel: ["dynamicVC", "createPanelChannelId", "パネル設置チャンネル"],
@@ -1333,7 +1303,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       introcheck: ["dynamicVC", "introCheckChannelId", "自己紹介確認用"], introsource: ["dynamicVC", "introSourceChannelId", "自己紹介ソース用"],
       male: ["roles", "male", "男性ロール"], female: ["roles", "female", "女性ロール"]
     };
-
+    
     const [sec, key, name] = map[field];
     config[sec][key] = selected;
     saveGuildConfig(gid, config);
@@ -1913,7 +1883,7 @@ async function syncAndCheckIntros(guild) {
 // ─── ギルド参加時の案内 ────────────────────────────────────────────────────
 client.on(Events.GuildCreate, async (guild) => {
   console.log(`[System] 新しいギルドに参加しました: ${guild.name} (${guild.id})`);
-
+  
   // スラッシュコマンドをこのギルドに即座にデプロイ
   await deployCommands(guild.id);
 
@@ -1924,49 +1894,41 @@ client.on(Events.GuildCreate, async (guild) => {
       .setTitle("🎙️ 導入ありがとうございます！")
       .setDescription(
         "ボイスチャンネル管理Bot「DIS COORDE」です。\n\n" +
-        "まずは管理用パネルを設置して初期設定を行いましょう。\n" +
-        "下のボタンを押すと、あなたにのみ見えるチャンネル選択メニューが表示されます。"
+        "まずは管理用パネルを設置するために、**設置したいチャンネル**で以下のコマンドを実行してください。\n" +
+        "### `/setup`"
       );
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId("btn_start_setup")
-        .setLabel("セットアップを開始する")
-        .setStyle(ButtonStyle.Success)
-    );
-
-    await channel.send({ embeds: [embed], components: [row] }).catch(() => { });
+    await channel.send({ embeds: [embed] }).catch(() => { });
   }
 });
 
 // ─── 起動時クリーンアップ & パネル設置 ──────────────────────────────────────
 client.once(Events.ClientReady, async () => {
   global.__setupSettingsPanel = setupSettingsPanel;
-
+  
   console.log("[System] 全ギルドの初期化を開始します...");
   for (const guild of client.guilds.cache.values()) {
     try {
       await deployCommands(guild.id);
       const config = getGuildConfig(guild.id);
-
+      
       // パネル再設置
       await setupSettingsPanel(guild.id);
       await setupCreatePanel(guild.id);
-
+      
       // 自己紹介チェック開始
       syncAndCheckIntros(guild);
 
       // 空VCのクリーンアップ
       if (config.dynamicVC.cleanupCategoryId) {
         const channels = await guild.channels.fetch();
-        const empties = channels.filter(c =>
+        const empties = channels.filter(c => 
           c.type === ChannelType.GuildVoice &&
           c.parentId === config.dynamicVC.cleanupCategoryId &&
           c.members.size === 0 &&
           (c.name.includes("のVC") || c.name.includes("部屋"))
         );
         for (const ch of empties.values()) {
-          await ch.delete("起動時クリーンアップ").catch(() => { });
+          await ch.delete("起動時クリーンアップ").catch(() => {});
         }
       }
       console.log(`[System] Guild Initialized: ${guild.name}`);
