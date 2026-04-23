@@ -19,7 +19,7 @@ const {
   RoleSelectMenuBuilder,
 } = require("discord.js");
 const fs = require("fs");
-const { clientId, guildId, dynamicVC, roles, features: featuresConfig } = require("./config.json");
+let { clientId, guildId, dynamicVC, roles, features: featuresConfig } = require("./config.json");
 // 機能ON/OFFフラグ（config.jsonのfeaturesから読み込み、実行時に変更可能）
 const features = Object.assign({
   introKickEnabled: true,
@@ -191,6 +191,14 @@ async function setupSettingsPanel(overrideId) {
   if (overrideId) {
     const data = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
     data.settingsChannelId = overrideId;
+
+    // 現在のチャンネルからギルドIDを取得して更新
+    const chan = client.channels.cache.get(overrideId);
+    if (chan && chan.guild) {
+      data.guildId = chan.guild.id;
+      guildId = chan.guild.id; // グローバル変数も更新
+    }
+
     fs.writeFileSync("./config.json", JSON.stringify(data, null, 2));
   }
   const channel = client.channels.cache.get(require("./config.json").settingsChannelId);
@@ -1757,16 +1765,33 @@ async function syncAndCheckIntros(guild) {
   }, 1000 * 60);
 }
 
+// ─── ギルド参加時の案内 ────────────────────────────────────────────────────
+client.on(Events.GuildCreate, async (guild) => {
+  console.log(`[System] 新しいギルドに参加しました: ${guild.name} (${guild.id})`);
+  const channel = guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.SendMessages));
+  if (channel) {
+    const embed = new EmbedBuilder()
+      .setColor(0x5865f2)
+      .setTitle("🎙️ 導入ありがとうございます！")
+      .setDescription(
+        "ボイスチャンネル管理Bot「DIS COORDE」です。\n\n" +
+        "まずは管理用パネルを設置するために、**設置したいチャンネル**で以下のコマンドを実行してください。\n" +
+        "### `/setup`"
+      );
+    await channel.send({ embeds: [embed] }).catch(() => { });
+  }
+});
+
 // ─── 起動時クリーンアップ & パネル設置 ──────────────────────────────────────
 client.once(Events.ClientReady, async () => {
   global.__setupSettingsPanel = setupSettingsPanel; // /setup コマンドから呼べるよう登録
   setupSettingsPanel();
   if (!dynamicVC?.cleanupCategoryId) return;
   try {
-    const guild = await client.guilds.fetch(guildId);
-    syncAndCheckIntros(guild);
+    const g = await client.guilds.fetch(guildId);
+    syncAndCheckIntros(g);
 
-    const channels = await guild.channels.fetch();
+    const channels = await g.channels.fetch();
     const empties = channels.filter(
       (c) =>
         c.type === ChannelType.GuildVoice &&
