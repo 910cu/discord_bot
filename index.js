@@ -410,17 +410,19 @@ function buildPanelPayload(vc) {
   const genderLine = gender === "male" ? "♂️ 男性のみ" : gender === "female" ? "♀️ 女性のみ" : "👥 制限なし";
 
   const embed = new EmbedBuilder()
-    .setColor(0x57f287)
-    .setTitle("🎛️ ルームコントロール")
+    .setColor(locked ? 0xe74c3c : 0x2b2d31)
+    .setTitle(`⬛ ROOM CONTROL | ${vc.name}`)
     .setDescription(
-      `**👑 部屋主:** <@${ownerId}>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `このパネルは**部屋主のみ**が操作できます。\n` +
-      `━━━━━━━━━━━━━━━━━━━━`
+      `-# System: Voice Management ｜ Status: ${locked ? "LOCKED" : "OPERATIONAL"}\n\n` +
+      `### 👑 部屋主 [Owner]\n` +
+      `> <@${ownerId}>\n\n` +
+      `▼ **現在のルーム設定 [Status]**\n` +
+      `> 状態 ─ ${lockLine}\n` +
+      `> 上限 ─ ${limitLine}\n` +
+      `> 制限 ─ ${genderLine}\n\n` +
+      `-# このパネルは部屋主のみが操作可能です。`
     )
-    .addFields(
-      { name: "👥 人数上限", value: limitLine, inline: true },
-    );
+    .setFooter({ text: "DIS COORDE Room Management", iconURL: client.user.displayAvatarURL() });
 
   // 人数固定VC（4人・5人部屋）: お布団ボタンのみ表示
   if (isLimitLocked) {
@@ -430,21 +432,6 @@ function buildPanelPayload(vc) {
     return { embeds: [embed], components: [row] };
   }
 
-  embed
-    .setColor(locked ? 0xe74c3c : 0x57f287)
-    .setDescription(
-      `**👑 部屋主:** <@${ownerId}>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `このパネルは**部屋主のみ**が操作できます。\n` +
-      (locked ? `一番下の緑色のボタンは、**通話外の方**が参加を希望する際に使用します。\n` : "") +
-      `━━━━━━━━━━━━━━━━━━━━`
-    )
-    .spliceFields(0, 1)
-    .addFields(
-      { name: "🔒 ルーム状態", value: lockLine, inline: true },
-      { name: "👥 人数上限", value: limitLine, inline: true },
-      { name: "🚻 性別制限", value: genderLine, inline: true },
-    );
 
   // Row 1: 基本操作
   const row1 = new ActionRowBuilder().addComponents(
@@ -1410,9 +1397,15 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
               postedSet.add(member.id);
 
               const embed = new EmbedBuilder()
-                .setAuthor({ name: `${member.displayName} さんの自己紹介`, iconURL: member.user.displayAvatarURL() })
-                .setDescription(data.content || "内容なし")
-                .setColor(0x5865f2);
+                .setColor(0x2b2d31)
+                .setTitle(`⬛ PROFILE | ${member.displayName}`)
+                .setThumbnail(member.user.displayAvatarURL())
+                .setDescription(
+                  `-# System: Profile Retrieval ｜ Database: introDB.json\n\n` +
+                  `### 📝 自己紹介 / Introduction\n` +
+                  `> ${data.content || "内容なし"}`
+                )
+                .setFooter({ text: "DIS COORDE Profile System", iconURL: client.user.displayAvatarURL() });
 
               try {
                 const msg = await vc.send({ embeds: [embed] });
