@@ -19,7 +19,12 @@ const {
   RoleSelectMenuBuilder,
 } = require("discord.js");
 const fs = require("fs");
-const { token, clientId, guildId, dynamicVC, roles } = require("./config.json");
+const { clientId, guildId, dynamicVC, roles } = require("./config.json");
+const token = process.env.DISCORD_TOKEN;
+if (!token) {
+  console.error("❌ 環境変数 DISCORD_TOKEN が設定されていません。");
+  process.exit(1);
+}
 const allCommands = require("./commands");
 
 const client = new Client({
