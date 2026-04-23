@@ -154,14 +154,18 @@ client.commands = new Collection();
 for (const cmd of allCommands) client.commands.set(cmd.data.name, cmd);
 
 // ─── スラッシュコマンドをDiscordへデプロイ ────────────────────────────────────
-async function deployCommands() {
+async function deployCommands(targetGuildId = null) {
   const rest = new REST().setToken(token);
   try {
+    const route = targetGuildId 
+      ? Routes.applicationGuildCommands(clientId, targetGuildId)
+      : Routes.applicationGuildCommands(clientId, guildId);
+
     const data = await rest.put(
-      Routes.applicationGuildCommands(clientId, guildId),
+      route,
       { body: allCommands.map((c) => c.data.toJSON()) }
     );
-    console.log(`✅ ${data.length} 件のスラッシュコマンドを登録しました。`);
+    console.log(`✅ [Deploy] ${targetGuildId ? `Guild:${targetGuildId}` : "Global/Default"} に ${data.length} 件のコマンドを登録しました。`);
   } catch (err) {
     console.error("コマンド登録エラー:", err);
   }
@@ -1768,6 +1772,10 @@ async function syncAndCheckIntros(guild) {
 // ─── ギルド参加時の案内 ────────────────────────────────────────────────────
 client.on(Events.GuildCreate, async (guild) => {
   console.log(`[System] 新しいギルドに参加しました: ${guild.name} (${guild.id})`);
+  
+  // スラッシュコマンドをこのギルドに即座にデプロイ
+  await deployCommands(guild.id);
+
   const channel = guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.SendMessages));
   if (channel) {
     const embed = new EmbedBuilder()
@@ -1785,6 +1793,13 @@ client.on(Events.GuildCreate, async (guild) => {
 // ─── 起動時クリーンアップ & パネル設置 ──────────────────────────────────────
 client.once(Events.ClientReady, async () => {
   global.__setupSettingsPanel = setupSettingsPanel; // /setup コマンドから呼べるよう登録
+  
+  // 起動時に全ギルドへコマンドをデプロイ
+  console.log("[System] 全ギルドへのコマンドデプロイを開始します...");
+  for (const g of client.guilds.cache.values()) {
+    await deployCommands(g.id);
+  }
+  
   setupSettingsPanel();
   if (!dynamicVC?.cleanupCategoryId) return;
   try {
