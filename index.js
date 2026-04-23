@@ -479,18 +479,16 @@ function buildPanelPayload(vc) {
 
   const embed = new EmbedBuilder()
     .setColor(locked ? 0xe74c3c : 0x57f287)
-    .setTitle(`⬛ ROOM CONTROL | ${vc.name}`)
     .setDescription(
-      `-# System: Voice Management ｜ Status: ${locked ? "LOCKED" : "OPERATIONAL"}\n\n` +
       `### 👑 部屋主 [Owner]\n` +
       `> <@${ownerId}>\n\n` +
       `▼ **現在のルーム設定 [Status]**\n` +
-      `> 状態 ─ ${lockLine}\n` +
-      `> 上限 ─ ${limitLine}\n` +
-      `> 制限 ─ ${genderLine}\n\n` +
-      `-# このパネルは部屋主のみが操作可能です。`
-    )
-    .setFooter({ text: "DIS COORDE Room Management", iconURL: client.user.displayAvatarURL() });
+      `> **状態** ─ ${locked ? "🔴 **LOCKED** (ロック中)" : "🟢 **OPEN** (開放中)"}\n` +
+      `> **上限** ─ \`${limitLine}\`\n` +
+      `> **制限** ─ \`${genderLine}\`\n\n` +
+      `-# 🛡️ 部屋制限・名前変更は**部屋主のみ**操作可能です。\n` +
+      `-# 🛏️ お布団（AFK移動）は**誰でも**操作可能です。`
+    );
 
   // 人数固定VC（4人・5人部屋）: お布団ボタンのみ表示
   if (isLimitLocked) {
@@ -572,18 +570,22 @@ function buildVCSettingsPayload(vc) {
 
 // ─── コントロールパネルを初回送信（VC内テキストに投稿） ──────────────────────
 async function sendOrUpdateControlPanel(vc) {
-  // 既存パネルを削除
   const oldId = controlPanelMsgIds.get(vc.id);
+  const payload = buildPanelPayload(vc);
+
   if (oldId) {
     try {
       const oldMsg = await vc.messages.fetch(oldId);
-      await oldMsg.delete();
-    } catch { /* 既に消えていれば無視 */ }
-    controlPanelMsgIds.delete(vc.id);
+      await oldMsg.edit(payload);
+      return;
+    } catch {
+      // 既に消えている、または権限不足の場合は新規送信へ
+    }
   }
+
   // 新規送信
   try {
-    const sent = await vc.send(buildPanelPayload(vc));
+    const sent = await vc.send(payload);
     controlPanelMsgIds.set(vc.id, sent.id);
   } catch (err) { console.error("[ControlPanel] 送信エラー:", err.message); }
 }
@@ -1494,6 +1496,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
                 .setColor(0x2b2d31)
                 .setThumbnail(member.user.displayAvatarURL())
                 .setDescription(
+                  `## 👤 ${member.displayName}\n` +
                   `### 📝 自己紹介 / Introduction\n` +
                   `> ${data.content || "内容なし"}`
                 )
