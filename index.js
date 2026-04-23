@@ -203,11 +203,8 @@ async function setupSettingsPanel(overrideId) {
   const meta = bumpPanelVersion(), updated = new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", hour12: false });
   let desc = `-# Version ${meta.version}.0.0 ｜ System: Operational\n\n`;
 
-  if (features.afkEnabled || features.vcPanelEnabled) {
-    desc += `### ⚙️ 基本設定 [Basic]\n`;
-    if (features.afkEnabled) desc += `> AFK: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n`;
-    if (features.vcPanelEnabled) desc += `> パネル: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n`;
-    desc += `\n`;
+  if (features.vcPanelEnabled) {
+    desc += `### 🛠️ パネル設定 [Panel]\n> 設置先: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n\n`;
   }
   if (features.vcCreationEnabled) {
     desc += `### ➕ VC自動作成 [Creation]\n> 自由: ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"}\n> 4/5人: ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"} / ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"}\n\n`;
@@ -215,18 +212,12 @@ async function setupSettingsPanel(overrideId) {
   if (features.introKickEnabled) {
     desc += `### 📝 未提出者自動整理 [Profile Guard]\n> 確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n> 警告/実行: ${dynamicVC.introWarnMinutes ?? 2880}分 / ${dynamicVC.introKickMinutes ?? 4320}分後\n\n`;
   }
-  if (features.vcIntroDisplayEnabled) {
-    desc += `### 🖼️ VC内自己紹介表示 [Intro Display]\n> ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n\n`;
-  }
-  if (features.genderRoleEnabled) {
-    desc += `### 🚻 部屋制限 [Room Guard]\n> ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定`"} / ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n`;
-  }
+  desc += `### 🎙️ VC内機能設定 [Voice Features]\n> AFK / 自己紹介表示 / 部屋制限\n\n`;
 
   const embed = createEmbed(desc).setTitle("⬛ DIS COORDE | Control Panel").setFooter({ text: `Last Updated: ${updated} (JST)` });
   const rows = [
-    createRow(createBtn("cfg_btn_afk", "💤 AFK設定"), createBtn("cfg_btn_panel", "🛠️ パネル設定"), createBtn("cfg_btn_trigger", "➕ VC自動作成")),
-    createRow(createBtn("cfg_btn_intro_kick", "📝 未提出者整理"), createBtn("cfg_btn_intro_display", "🖼️ VC内自己紹介表示")),
-    createRow(createBtn("cfg_btn_vc", "🚻 部屋制限設定"), createBtn("config_messages", "💬 メッセージ設定"))
+    createRow(createBtn("cfg_btn_vc_sub", "🎙️ VC機能設定", ButtonStyle.Primary), createBtn("cfg_btn_panel", "🛠️ パネル設定"), createBtn("cfg_btn_trigger", "➕ VC自動作成")),
+    createRow(createBtn("cfg_btn_intro_kick", "📝 未提出者整理"), createBtn("config_messages", "💬 メッセージ設定"))
   ];
   await channel.send({ embeds: [embed], components: rows });
 }
@@ -237,16 +228,10 @@ async function setupSettingsPanel(overrideId) {
 function getMainSettingsPayload() {
   let description = ``;
 
-  if (features.afkEnabled || features.vcPanelEnabled) {
-    description += `### ⚙️ 基本設定 [Basic]\n`;
+  if (features.vcPanelEnabled) {
+    description += `### 🛠️ パネル設定 [Panel]\n`;
     description += `-# BOTの基本的な動作環境設定です。\n`;
-    if (features.afkEnabled) {
-      description += `> AFK (寝落ち) ─ ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n`;
-    }
-    if (features.vcPanelEnabled) {
-      description += `> VC作成パネル ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n`;
-    }
-    description += `\n`;
+    description += `> VC作成パネル ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n\n`;
   }
 
   if (features.vcCreationEnabled) {
@@ -265,41 +250,62 @@ function getMainSettingsPayload() {
     description += `> 実行 ─ 参加から ${dynamicVC.introKickMinutes ?? 4320} 分後\n\n`;
   }
 
-  if (features.vcIntroDisplayEnabled) {
-    description += `### 🖼️ VC内自己紹介表示 [Intro Display]\n`;
-    description += `-# 入室時に自己紹介文をVC内テキストへ自動転送します。\n`;
-    description += `- 表示用ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n\n`;
-  }
-
-  if (features.genderRoleEnabled) {
-    description += `### 🚻 部屋制限 [Room Guard]\n`;
-    description += `-# 性別ロールによる入室制限の設定です。\n`;
-    description += `> ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n`;
-    description += `> ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n`;
-  }
+  description += `### 🎙️ VC内機能設定 [Voice Features]\n`;
+  description += `-# AFK / 自己紹介表示 / 部屋制限 の設定です。\n`;
 
   const embed = new EmbedBuilder()
     .setColor(0x2b2d31)
     .setTitle("⬛ DIS COORDE | Control Panel")
     .setDescription(description || "（有効な機能がありません）");
 
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("cfg_btn_afk").setLabel("💤 AFK設定").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("cfg_btn_panel").setLabel("🛠️ VC作成パネル設定").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("cfg_btn_trigger").setLabel("➕ VC自動作成").setStyle(ButtonStyle.Secondary),
+  const row1 = createRow(
+    createBtn("cfg_btn_vc_sub", "🎙️ VC機能設定", ButtonStyle.Primary),
+    createBtn("cfg_btn_panel", "🛠️ パネル設定"),
+    createBtn("cfg_btn_trigger", "➕ VC自動作成")
   );
 
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("cfg_btn_intro_kick").setLabel("📝 未提出者整理").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("cfg_btn_intro_display").setLabel("🖼️ VC内自己紹介表示").setStyle(ButtonStyle.Secondary),
+  const row2 = createRow(
+    createBtn("cfg_btn_intro_kick", "📝 未提出者整理"),
+    createBtn("config_messages", "💬 メッセージ設定")
   );
 
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("cfg_btn_vc").setLabel("🚻 部屋制限").setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId("config_messages").setLabel("💬 メッセージ設定").setStyle(ButtonStyle.Secondary),
-  );
+  return { content: null, embeds: [embed], components: [row1, row2], ephemeral: true };
+}
 
-  return { content: null, embeds: [embed], components: [row1, row2, row3], ephemeral: true };
+function getVCSubSettingsPayload() {
+  let description = `### 🎙️ VC内機能設定 [Voice Features]\n`;
+  description += `-# ボイスチャンネル内での動作に関する設定です。\n\n`;
+
+  if (features.afkEnabled) {
+    description += `### 💤 AFK設定\n`;
+    description += `> 移動先 ─ ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n\n`;
+  }
+
+  if (features.vcIntroDisplayEnabled) {
+    description += `### 🖼️ VC内自己紹介表示\n`;
+    description += `-# 入室時に自己紹介文をVC内テキストへ自動転送します。\n`;
+    description += `> 表示用ソース ─ ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n\n`;
+  }
+
+  if (features.genderRoleEnabled) {
+    description += `### 🚻 部屋制限\n`;
+    description += `-# 性別ロールによる入室制限の設定です。\n`;
+    description += `> ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定`"} / ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n`;
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2b2d31)
+    .setTitle("🎙️ VC内機能設定")
+    .setDescription(description || "（有効な機能がありません）");
+
+  const row1 = createRow(
+    createBtn("cfg_btn_afk", "💤 AFK設定"),
+    createBtn("cfg_btn_intro_display", "🖼️ VC内自己紹介表示"),
+    createBtn("cfg_btn_vc", "🚻 部屋制限")
+  );
+  const row2 = createRow(createBtn("cfg_back_main", "⬅️ 戻る"));
+
+  return { content: null, embeds: [embed], components: [row1, row2], ephemeral: true };
 }
 
 function getAFKSettingsPayload() {
@@ -308,7 +314,7 @@ function getAFKSettingsPayload() {
   const rows = [
     createRow(createBtn("toggle_afk", `AFK機能: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_afk").setPlaceholder(en ? "移動先を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!en)),
-    createRow(createBtn("cfg_back_main", "⬅️ 戻る"))
+    createRow(createBtn("cfg_back_vc_sub", "⬅️ 戻る"))
   ];
   return { embeds: [createEmbed(desc, 0x2b2d31, "💤 AFK設定")], components: rows, ephemeral: true };
 }
@@ -350,7 +356,7 @@ function getIntroDisplaySettingsPayload() {
   const rows = [
     createRow(createBtn("toggle_vc_intro", `表示: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_introsource").setPlaceholder(en ? "ソースを選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildText]).setDisabled(!en)),
-    createRow(createBtn("cfg_back_main", "⬅️ 戻る"))
+    createRow(createBtn("cfg_back_vc_sub", "⬅️ 戻る"))
   ];
   return { embeds: [createEmbed(desc, 0x5865f2, "🖼️ VC内表示設定")], components: rows, ephemeral: true };
 }
@@ -361,7 +367,7 @@ function getVCSettingsPayload() {
     createRow(createBtn("toggle_gender", `部屋制限: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new RoleSelectMenuBuilder().setCustomId("select_cfg_male").setPlaceholder(en ? "♂️ 男性を選択" : "⛔ 無効").setDisabled(!en)),
     createRow(new RoleSelectMenuBuilder().setCustomId("select_cfg_female").setPlaceholder(en ? "♀️ 女性を選択" : "⛔ 無効").setDisabled(!en)),
-    createRow(createBtn("cfg_back_main", "⬅️ 戻る"))
+    createRow(createBtn("cfg_back_vc_sub", "⬅️ 戻る"))
   ];
   return { embeds: [createEmbed(desc, 0x57f287, "🎙️ 部屋制限設定")], components: rows, ephemeral: true };
 }
@@ -451,34 +457,11 @@ function buildPanelPayload(vc) {
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, ownerId = vcOwners.get(vc.id), isLimitLocked = limitLockedVCs.has(vc.id);
   const gl = gender === "male" ? "♂️ 男性のみ" : gender === "female" ? "♀️ 女性のみ" : "👥 制限なし", ll = (vc.userLimit ?? 0) === 0 ? "∞ 無制限" : `${vc.userLimit}人`;
   const desc = `### 👑 部屋主 [Owner]\n> <@${ownerId}>\n\n▼ **設定状況 [Status]**\n> 状態 ─ ${locked ? "🔴 **LOCKED**" : "🟢 **OPEN**"}\n> 上限 ─ \`${ll}\`\n> 制限 ─ \`${gl}\`\n\n-# 🛡️ 制限・名前変更は**部屋主のみ**可\n-# 🛏️ お布団は**誰でも**可`;
-
-  // メインパネル：管理メニューとAFKボタンのみに集約
-  const row1 = createRow(
-    createBtn("vc_manage_menu", "⚙️ 部屋管理", ButtonStyle.Secondary),
-    createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !features.afkEnabled)
-  );
-
+  if (isLimitLocked) return { embeds: [createEmbed(desc, locked ? 0xe74c3c : 0x57f287)], components: [createRow(createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !features.afkEnabled))] };
+  const row1 = createRow(createBtn("vc_rename", "✏️ 部屋名変更"), createBtn("vc_toggle_lock", locked ? "🔓 ロック解除" : "🔒 ロックする", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 部屋制限", ButtonStyle.Secondary, !features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !features.afkEnabled));
   const components = [row1];
   if (locked) components.push(createRow(createBtn("label_knock", "【参加希望】", ButtonStyle.Secondary, true), createBtn(`vc_knock_${vc.id}`, "🚪 ノックして参加をリクエスト", ButtonStyle.Success)));
-
   return { embeds: [createEmbed(desc, locked ? 0xe74c3c : 0x57f287)], components };
-}
-
-function buildVCManageMenuPayload(vc) {
-  const locked = lockedVCs.has(vc.id), ownerId = vcOwners.get(vc.id);
-  const desc = `### ⚙️ 部屋管理メニュー [Management]\nここでは部屋の名前変更やロック、各種制限の設定が行えます。\n\n**現在の状態:**\n> ロック ─ ${locked ? "🔴 **LOCKED**" : "🟢 **OPEN**"}`;
-
-  const row1 = createRow(
-    createBtn("vc_rename", "✏️ 部屋名変更"),
-    createBtn("vc_toggle_lock", locked ? "🔓 ロック解除" : "🔒 ロックする", locked ? ButtonStyle.Danger : ButtonStyle.Secondary),
-    createBtn("vc_settings_btn", "🛡️ 部屋制限", ButtonStyle.Secondary, !features.genderRoleEnabled)
-  );
-  const rowBack = createRow(createBtn("vc_main_panel", "⬅️ 戻る"));
-
-  return {
-    embeds: [createEmbed(desc, 0x2b2d31)],
-    components: [row1, rowBack]
-  };
 }
 
 function buildVCSettingsPayload(vc) {
@@ -491,7 +474,7 @@ function buildVCSettingsPayload(vc) {
     components: [
       createRow(createBtn("label_g", "【性別】", ButtonStyle.Secondary, true), createBtn("vc_gender_none", "なし", gStyle(null), gDis), createBtn("vc_gender_male", "♂️ 男性", gStyle("male"), gDis), createBtn("vc_gender_female", "♀️ 女性", gStyle("female"), gDis)),
       createRow(createBtn("label_l", "【人数】", ButtonStyle.Secondary, true), createBtn("vc_limit_0", "∞ 無制限", lStyle(0)), createBtn("vc_limit_4", "4人", lStyle(4)), createBtn("vc_limit_5", "5人", lStyle(5)), createBtn("vc_limit_custom", "指定...", ButtonStyle.Primary)),
-      createRow(createBtn("vc_manage_menu", "⬅️ 戻る"))
+      createRow(createBtn("vc_main_panel", "⬅️ 戻る"))
     ]
   };
 }
@@ -516,9 +499,9 @@ async function sendOrUpdateControlPanel(vc) {
 }
 
 // ─── ボタン操作時: interaction.update() でパネルをその場で書き換え ───────────
-async function updatePanelViaInteraction(interaction, vc, payloadFn = buildPanelPayload) {
+async function updatePanelViaInteraction(interaction, vc) {
   try {
-    await interaction.update(payloadFn(vc));
+    await interaction.update(buildPanelPayload(vc));
   } catch (e) {
     console.error("[ControlPanel] interaction.update失敗:", e.message);
     await sendOrUpdateControlPanel(vc);
@@ -721,18 +704,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
       console.log(`[Lock] ロック: ${vc.name}`);
     }
 
-    await updatePanelViaInteraction(interaction, vc, buildVCManageMenuPayload);
+    await updatePanelViaInteraction(interaction, vc);
     await updateVcName(vc, null, interaction);
-    return;
-  }
-
-  // ── ボタン：部屋管理メニュー表示 ──────────────────────────────────────────
-  if (interaction.isButton() && interaction.customId === "vc_manage_menu") {
-    const vc = interaction.member.voice.channel;
-    if (!vc || !tempChannels.has(vc.id)) { await interaction.deferUpdate(); return; }
-    if (vcOwners.get(vc.id) !== interaction.user.id) { await interaction.deferUpdate(); return; }
-
-    await interaction.update(buildVCManageMenuPayload(vc));
     return;
   }
 
@@ -1074,6 +1047,18 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ── ⬅️ サブパネルからメイン設定パネルへ戻る ──────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_back_main") {
     await interaction.update(getMainSettingsPayload());
+    return;
+  }
+
+  // ── ⬅️ VC機能設定サブフォルダへ戻る ──────────────────────────────
+  if (interaction.isButton() && interaction.customId === "cfg_back_vc_sub") {
+    await interaction.update(getVCSubSettingsPayload());
+    return;
+  }
+
+  // ── 🎙️ VC機能設定（サブフォルダ） ──────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "cfg_btn_vc_sub") {
+    await interaction.update(getVCSubSettingsPayload());
     return;
   }
 
