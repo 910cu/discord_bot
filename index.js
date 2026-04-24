@@ -304,10 +304,26 @@ client.on(Events.InteractionCreate, async (i) => {
       if (!pendingRequests.has(vcId)) pendingRequests.set(vcId, new Map()); pendingRequests.get(vcId).set(i.user.id, true); await updateKnockNotifyMessage(vc, vcOwners.get(vcId)); return i.reply({ content: "✅ 申請しました", ephemeral: true });
     }
     if (cid.startsWith("knock_approve_") || cid.startsWith("knock_deny_")) {
-      const [, , vcId, uid] = cid.split("_"), vc = i.guild.channels.cache.get(vcId); if (vcOwners.get(vcId) !== i.user.id || !vc) return i.deferUpdate();
-      await i.deferUpdate(); pendingRequests.get(vcId)?.delete(uid);
+      const [, , vcId, uid] = cid.split("_"), vc = i.guild.channels.cache.get(vcId);
+      const isOwner = vcOwners.get(vcId) === i.user.id;
+      if (!isOwner || !vc) return i.deferUpdate();
+      if (i.channel.type === ChannelType.DM) await i.update({ content: `✅ ${cid.includes("approve") ? "許可" : "拒否"}しました。`, components: [] });
+      else await i.deferUpdate();
+      pendingRequests.get(vcId)?.delete(uid);
       if (cid.includes("approve")) { if (!allowedUsers.has(vcId)) allowedUsers.set(vcId, new Set()); allowedUsers.get(vcId).add(uid); const m = await i.guild.members.fetch(uid).catch(() => null); if (m?.voice.channel) m.voice.setChannel(vc).catch(() => vc.send(`✅ <@${uid}> 入室許可`)); else vc.send(`✅ <@${uid}> 入室許可`).then(msg => setTimeout(() => msg.delete().catch(() => { }), 60000)); }
       return updateKnockNotifyMessage(vc, i.user.id);
+    }
+    if (cid.startsWith("role_assign_")) {
+      const [, , uid, mode] = cid.split("_");
+      const member = await i.guild.members.fetch(uid).catch(() => null);
+      if (!member) return i.update({ content: "❌ ユーザーが見つかりませんでした。", components: [] });
+      if (mode === "none") return i.update({ content: "✅ 拒否しました。", components: [] });
+      try {
+        const roleId = roles[mode];
+        if (roleId) await member.roles.add(roleId);
+        await i.update({ content: `✅ <@${uid}> を ${mode === 'male' ? '男性' : '女性'}グループ（ロール）に追加しました！`, components: [] });
+      } catch (e) { await i.update({ content: `❌ エラー: ${e.message}`, components: [] }); }
+      return;
     }
     if (cid.startsWith("bio_input_")) return i.user.id === cid.replace("bio_input_", "") ? i.showModal(new ModalBuilder().setCustomId(`bio_modal_${i.user.id}`).setTitle("自己紹介入力").addComponents(createRow([new TextInputBuilder().setCustomId("bio").setLabel("自己紹介").setStyle(TextInputStyle.Paragraph).setMaxLength(300)]))) : i.deferUpdate();
   }
@@ -347,9 +363,38 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   }
   if (n.channelId && tempChannels.has(n.channelId)) {
     const vc = n.channel, m = n.member, gender = genderMode.get(vc.id);
-    if (features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== m.id && !m.roles.cache.has(roles[gender])) { try { await m.voice.disconnect(); m.send((messagesConfig[gender === 'male' ? 'genderMaleOnlyDM' : 'genderFemaleOnlyDM'] || "").replace(/{vcName}/g, vc.name).replace(/\\n/g, '\n')).catch(() => { }); } catch { } return; }
-    if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== m.id && !allowedUsers.get(vc.id)?.has(m.id)) { try { await m.voice.disconnect(); if (!pendingRequests.has(vc.id)) pendingRequests.set(vc.id, new Map()); pendingRequests.get(vc.id).set(m.id, true); await updateKnockNotifyMessage(vc, vcOwners.get(vc.id)); } catch { } return; }
-    if (o.channelId !== n.channelId && features.vcIntroDisplayEnabled) { const db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {}; if (db[m.id]?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setThumbnail(m.user.displayAvatarURL()).setDescription(`## ${m.displayName}\n> ${db[m.id].content}`).setFooter({ text: "DIS COORDE Profile System" })] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } } }
+    if (features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== m.id && !m.roles.cache.has(roles[gender])) {
+      try {
+        await m.voice.disconnect();
+        m.send((messagesConfig[gender === 'male' ? 'genderMaleOnlyDM' : 'genderFemaleOnlyDM'] || "").replace(/{vcName}/g, vc.name).replace(/\\n/g, '\n')).catch(() => { });
+        const owner = await vc.guild.members.fetch(vcOwners.get(vc.id)).catch(() => null);
+        if (owner) {
+          const row = createRow([
+            createBtn(`role_assign_${m.id}_male`, "♂️ 男性に追加", ButtonStyle.Primary),
+            createBtn(`role_assign_${m.id}_female`, "♀️ 女性に追加", ButtonStyle.Primary),
+            createBtn(`role_assign_${m.id}_none`, "❌ 拒否", ButtonStyle.Secondary)
+          ]);
+          await owner.send({ content: `⚠️ <@${m.id}> が性別制限（${gender === 'male' ? '男性専用' : '女性専用'}）により **${vc.name}** から退出させられました。\nこのユーザーを適切なグループ（ロール）に追加しますか？`, components: [row] }).catch(() => { });
+        }
+      } catch { } return;
+    }
+    if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== m.id && !allowedUsers.get(vc.id)?.has(m.id)) {
+      try {
+        await m.voice.disconnect();
+        if (!pendingRequests.has(vc.id)) pendingRequests.set(vc.id, new Map());
+        pendingRequests.get(vc.id).set(m.id, true);
+        await updateKnockNotifyMessage(vc, vcOwners.get(vc.id));
+        const owner = await vc.guild.members.fetch(vcOwners.get(vc.id)).catch(() => null);
+        if (owner) {
+          const row = createRow([
+            createBtn(`knock_approve_${vc.id}_${m.id}`, "✅ 許可", ButtonStyle.Success),
+            createBtn(`knock_deny_${vc.id}_${m.id}`, "❌ 拒否", ButtonStyle.Danger)
+          ]);
+          await owner.send({ content: `🚪 <@${m.id}> が **${vc.name}** にノックしました。\nDMから許可・拒否を選択できます。`, components: [row] }).catch(() => { });
+        }
+      } catch { } return;
+    }
+    if (o.channelId !== n.channelId && features.vcIntroDisplayEnabled) { const db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {}; if (db[m.id]?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${db[m.id].content}`).setFooter({ text: "DIS COORDE Profile System" })] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } } }
   }
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
