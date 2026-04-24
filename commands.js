@@ -5,7 +5,20 @@ const {
   ChannelType,
 } = require("discord.js");
 
+// コマンドを受け付けるテキストチャンネル名（空文字にすると制限なし）
+const ADMIN_CHANNEL_NAME = "moveeradmin";
 
+function checkAdminChannel(interaction) {
+  if (!ADMIN_CHANNEL_NAME) return true;
+  return interaction.channel.name === ADMIN_CHANNEL_NAME;
+}
+
+function adminChannelError(interaction) {
+  return interaction.reply({
+    content: `❌ このコマンドは \`${ADMIN_CHANNEL_NAME}\` チャンネルでのみ使用できます。`,
+    ephemeral: true,
+  });
+}
 
 function resultEmbed(title, fields) {
   return new EmbedBuilder()
@@ -29,7 +42,7 @@ const moveCommand = {
     .addUserOption((o) => o.setName("user5").setDescription("移動するユーザー5")),
 
   async execute(interaction) {
-
+    if (!checkAdminChannel(interaction)) return adminChannelError(interaction);
 
     const myVC = interaction.member.voice.channel;
     if (!myVC)
@@ -73,7 +86,7 @@ const cmoveCommand = {
     .addUserOption((o) => o.setName("user5").setDescription("移動するユーザー5")),
 
   async execute(interaction) {
-
+    if (!checkAdminChannel(interaction)) return adminChannelError(interaction);
 
     const targetVC = interaction.options.getChannel("channel");
     const members = ["user1", "user2", "user3", "user4", "user5"]
@@ -113,7 +126,7 @@ const fmoveCommand = {
     ),
 
   async execute(interaction) {
-
+    if (!checkAdminChannel(interaction)) return adminChannelError(interaction);
 
     const fromVC = interaction.options.getChannel("from");
     const toVC   = interaction.options.getChannel("to");
@@ -151,7 +164,7 @@ const gmoveCommand = {
     ),
 
   async execute(interaction) {
-
+    if (!checkAdminChannel(interaction)) return adminChannelError(interaction);
 
     const myVC   = interaction.member.voice.channel;
     if (!myVC)
@@ -189,7 +202,7 @@ const rmoveCommand = {
     .addRoleOption((o) => o.setName("role").setDescription("対象ロール").setRequired(true)),
 
   async execute(interaction) {
-
+    if (!checkAdminChannel(interaction)) return adminChannelError(interaction);
 
     const myVC = interaction.member.voice.channel;
     if (!myVC)
@@ -234,7 +247,7 @@ const tmoveCommand = {
     ),
 
   async execute(interaction) {
-
+    if (!checkAdminChannel(interaction)) return adminChannelError(interaction);
 
     const role     = interaction.options.getRole("role");
     const targetVC = interaction.options.getChannel("channel");
@@ -279,7 +292,7 @@ const ymoveCommand = {
     ),
 
   async execute(interaction) {
-
+    if (!checkAdminChannel(interaction)) return adminChannelError(interaction);
 
     const fromVC = interaction.options.getChannel("from");
     const count  = interaction.options.getInteger("count");
@@ -339,7 +352,7 @@ const zmoveCommand = {
     ),
 
   async execute(interaction) {
-
+    if (!checkAdminChannel(interaction)) return adminChannelError(interaction);
 
     const toVC = interaction.options.getChannel("to");
 
@@ -372,39 +385,6 @@ const zmoveCommand = {
   },
 };
 
-// ─── /setup ───────────────────────────────────────────────────────────────────
-// このチャンネルを設定チャンネルとして登録し、設定パネルを設置する
-const setupCommand = {
-  data: new SlashCommandBuilder()
-    .setName("setup")
-    .setDescription("このチャンネルを設定パネルのチャンネルとして登録します")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-
-  async execute(interaction) {
-    const fs = require("fs");
-    const GUILD_CONFIGS_PATH = "./guildConfigs.json";
-    const guildId = interaction.guildId;
-
-    let configs = {};
-    if (fs.existsSync(GUILD_CONFIGS_PATH)) {
-      configs = JSON.parse(fs.readFileSync(GUILD_CONFIGS_PATH, "utf-8"));
-    }
-
-    if (!configs[guildId]) configs[guildId] = {};
-    configs[guildId].settingsChannelId = interaction.channelId;
-
-    fs.writeFileSync(GUILD_CONFIGS_PATH, JSON.stringify(configs, null, 2));
-
-    await interaction.reply({ content: "✅ このチャンネルを設定チャンネルとして登録しました。パネルを設置します…", ephemeral: true });
-
-    if (typeof global.__setupSettingsPanel === "function") {
-      await global.__setupSettingsPanel(interaction.channelId);
-    }
-
-    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
-  },
-};
-
 module.exports = [
   moveCommand,
   cmoveCommand,
@@ -414,5 +394,4 @@ module.exports = [
   tmoveCommand,
   ymoveCommand,
   zmoveCommand,
-  setupCommand,
 ];
