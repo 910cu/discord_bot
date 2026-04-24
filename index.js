@@ -17,6 +17,7 @@ const {
   UserSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  Partials,
 } = require("discord.js");
 const fs = require("fs");
 const { clientId, guildId, dynamicVC, roles, features: featuresConfig } = require("./config.json");
@@ -40,7 +41,9 @@ const client = new Client({
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages,
   ],
+  partials: [Partials.Channel, Partials.Message, Partials.User],
 });
 
 const defaultMessages = {
