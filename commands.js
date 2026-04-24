@@ -385,21 +385,6 @@ const zmoveCommand = {
   },
 };
 
-// ─── /setup ───────────────────────────────────────────────────────────────────
-const setupCommand = {
-  data: new SlashCommandBuilder()
-    .setName("setup")
-    .setDescription("初期設定パネルを表示します")
-    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-  async execute(interaction) {
-    // index.js側で interaction をフックして処理するため、ここでは deferReply のみ
-    // または直接パネルを送信する関数を呼び出す（今回は index.js で共通化）
-    await interaction.deferReply({ ephemeral: true });
-    // index.js の interactionCreate で実際の処理を行うため、ここではフラグのみ
-    interaction.client.emit("setup_command", interaction);
-  },
-};
-
 module.exports = [
   moveCommand,
   cmoveCommand,
@@ -409,5 +394,4 @@ module.exports = [
   tmoveCommand,
   ymoveCommand,
   zmoveCommand,
-  setupCommand,
 ];
