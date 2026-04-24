@@ -218,7 +218,7 @@ async function setupSettingsPanel(gid) {
   const SETTINGS_CHANNEL_ID = g.dynamicVC.createPanelChannelId || "1496141555705319445"; // fallback or logic
   const channel = client.channels.cache.get(SETTINGS_CHANNEL_ID); if (!channel) return;
   try { const msgs = await channel.messages.fetch({ limit: 10 }); for (const m of msgs.filter(m => m.author.id === client.user.id).values()) await m.delete().catch(() => { }); } catch { }
-  
+
   const meta = { version: (g.meta.version || 0) + 1, lastUpdated: new Date().toISOString() };
   await Guild.updateOne({ guildId: gid }, { $set: { meta } });
 
@@ -322,7 +322,7 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ content: `### 📂 データベース内の生データ\n\`\`\`json\n${json.length > 1900 ? json.substring(0, 1900) + "...(省略)" : json}\n\`\`\``, ephemeral: true });
     }
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", "")));
-    
+
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled" };
     if (toggles[cid]) {
       const key = toggles[cid];
@@ -331,7 +331,7 @@ client.on(Events.InteractionCreate, async (i) => {
       await i.update(await getSettingsPayload(gid, cid.replace("toggle_", "").replace("gender", "vc").replace("vc_creation", "trigger").replace("vc_intro", "intro_display")));
       return setupSettingsPanel(gid);
     }
-    
+
     if (cid === "config_intro_time") return i.showModal(new ModalBuilder().setCustomId("intro_time_modal").setTitle("期限設定").addComponents(createRow([new TextInputBuilder().setCustomId("warn").setLabel("警告(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introWarnMinutes || 2880))]), createRow([new TextInputBuilder().setCustomId("kick").setLabel("キック(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introKickMinutes || 4320))])));
     if (cid === "config_trigger_names") return i.showModal(new ModalBuilder().setCustomId("trigger_name_modal").setTitle("部屋名テンプレート設定").addComponents(
       createRow([new TextInputBuilder().setCustomId("name_free").setLabel("自由枠 ({user}使用可)").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.channelName).setRequired(true)]),
@@ -374,13 +374,15 @@ client.on(Events.InteractionCreate, async (i) => {
       const w = parseInt(i.fields.getTextInputValue("warn")), k = parseInt(i.fields.getTextInputValue("kick"));
       if (!isNaN(w) && !isNaN(k)) {
         await Guild.updateOne({ guildId: gid }, { $set: { "dynamicVC.introWarnMinutes": w, "dynamicVC.introKickMinutes": k } });
-        await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(gid);
+        await i.update(await getSettingsPayload(gid, "intro_kick"));
+        await setupSettingsPanel(gid);
       }
     }
     if (cid === "trigger_name_modal") {
       const nf = i.fields.getTextInputValue("name_free"), n4 = i.fields.getTextInputValue("name4"), n5 = i.fields.getTextInputValue("name5");
       await Guild.updateOne({ guildId: gid }, { $set: { "dynamicVC.channelName": nf, "dynamicVC.channelName4": n4, "dynamicVC.channelName5": n5 } });
-      await i.update({ content: "✅ 部屋名を更新しました", embeds: [], components: [] }); setupSettingsPanel(gid);
+      await i.update(await getSettingsPayload(gid, "trigger"));
+      await setupSettingsPanel(gid);
     }
     if (cid.startsWith("msg_submit_")) {
       const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"];
@@ -393,9 +395,12 @@ client.on(Events.InteractionCreate, async (i) => {
   if (i.isAnySelectMenu() && i.customId.startsWith("select_cfg_")) {
     const field = i.customId.replace("select_cfg_", ""), val = i.values[0];
     const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", introcheck: "introCheckChannelId", introsource: "introSourceChannelId" };
+    const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", introcheck: "intro_kick", introsource: "intro_display" };
+    const type = typeMap[field] || "vc";
     if (map[field]) await Guild.updateOne({ guildId: gid }, { $set: { [`dynamicVC.${map[field]}`]: val } });
     else await Guild.updateOne({ guildId: gid }, { $set: { [`roles.${field}`]: val } });
-    await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(gid); if (field === "panel") setupCreatePanel(gid);
+    await i.update(await getSettingsPayload(gid, type));
+    await setupSettingsPanel(gid); if (field === "panel") await setupCreatePanel(gid);
   }
 });
 
@@ -439,7 +444,7 @@ const handleIntroUpdate = async (msg, type = "create") => {
 
   const isDel = type === "delete";
   const uid = msg.author.id;
-  
+
   if (isDel) {
     if (msg.channelId === sourceCh) await Intro.updateOne({ guildId: gid, userId: uid }, { $set: { content: "" } });
   } else {
@@ -466,7 +471,7 @@ client.once(Events.ClientReady, async () => {
     const g = await getGuildConfig(guild.id);
     setupSettingsPanel(guild.id);
     setupCreatePanel(guild.id);
-    
+
     // 定期チェック (自己紹介キック)
     setInterval(async () => {
       const gCurrent = await getGuildConfig(guild.id);
