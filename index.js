@@ -329,7 +329,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const newFeatures = { ...g.features, [key]: !g.features[key] };
       await Guild.updateOne({ guildId: gid }, { $set: { features: newFeatures } });
       await i.update(await getSettingsPayload(gid, cid.replace("toggle_", "").replace("gender", "vc").replace("vc_creation", "trigger").replace("vc_intro", "intro_display")));
-      return setupSettingsPanel(gid);
+      await setupSettingsPanel(gid);
     }
 
     if (cid === "config_intro_time") return i.showModal(new ModalBuilder().setCustomId("intro_time_modal").setTitle("期限設定").addComponents(createRow([new TextInputBuilder().setCustomId("warn").setLabel("警告(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introWarnMinutes || 2880))]), createRow([new TextInputBuilder().setCustomId("kick").setLabel("キック(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introKickMinutes || 4320))])));
@@ -468,9 +468,35 @@ client.once(Events.ClientReady, async () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
   const guilds = client.guilds.cache;
   for (const guild of guilds.values()) {
-    const g = await getGuildConfig(guild.id);
-    setupSettingsPanel(guild.id);
-    setupCreatePanel(guild.id);
+    const gid = guild.id;
+    const g = await getGuildConfig(gid);
+    await setupSettingsPanel(gid);
+    await setupCreatePanel(gid);
+
+    // データ移行 (introDB.json -> MongoDB)
+    if (fs.existsSync("./introDB.json")) {
+      try {
+        const localIntro = JSON.parse(fs.readFileSync("./introDB.json", "utf-8"));
+        let migratedCount = 0;
+        if (localIntro[gid]) {
+          for (const [uid, data] of Object.entries(localIntro[gid])) {
+            if (typeof data === "object") {
+              const existing = await Intro.findOne({ guildId: gid, userId: uid });
+              if (!existing) { await Intro.create({ guildId: gid, userId: uid, ...data }); migratedCount++; }
+            }
+          }
+        }
+        if (gid === guildId) {
+          for (const [uid, data] of Object.entries(localIntro)) {
+            if (uid.length > 15 && typeof data === "object" && !localIntro[uid]) {
+              const existing = await Intro.findOne({ guildId: gid, userId: uid });
+              if (!existing) { await Intro.create({ guildId: gid, userId: uid, ...data }); migratedCount++; }
+            }
+          }
+        }
+        if (migratedCount > 0) console.log(`📦 Guild ${gid}: ${migratedCount} 件の自己紹介データを移行しました。`);
+      } catch (err) { console.error("❌ 自己紹介データ移行エラー:", err); }
+    }
 
     // 定期チェック (自己紹介キック)
     setInterval(async () => {
