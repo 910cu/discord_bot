@@ -18,7 +18,9 @@
     "introCheckChannelId": "1496043493796221108",
     "introSourceChannelId": "1496417181464924192",
     "triggerChannelId4": "1496410842714083338",
-    "triggerChannelId5": "1496411087770484847"
+    "triggerChannelId5": "1496411087770484847",
+    "channelName4": "雑談4人部屋",
+    "channelName5": "雑談5人部屋"
   },
   "roles": {
     "male": "1493657341881749726",
