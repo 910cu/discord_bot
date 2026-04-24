@@ -385,7 +385,23 @@ const zmoveCommand = {
   },
 };
 
+// ─── /setup ───────────────────────────────────────────────────────────────────
+// 管理パネルを現在のチャンネルに設置
+const setupCommand = {
+  data: new SlashCommandBuilder()
+    .setName("setup")
+    .setDescription("管理パネルをこのチャンネルに設置します")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  async execute(interaction) {
+    // index.js側で処理するため、ここでは空のレスポンスを返すか、
+    // もしくはメッセージのみ返す（index.jsのInteractionCreateで検知して実行される）
+    return;
+  },
+};
+
 module.exports = [
+  setupCommand,
   moveCommand,
   cmoveCommand,
   fmoveCommand,
