@@ -408,7 +408,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   if (n.channelId && triggers.includes(n.channelId) && g.features.vcCreationEnabled) {
     const limit = n.channelId === triggers[1] ? 4 : n.channelId === triggers[2] ? 5 : 0;
     const name = limit === 4 ? (g.dynamicVC.channelName4 || "雑談4人部屋") : limit === 5 ? (g.dynamicVC.channelName5 || "雑談5人部屋") : g.dynamicVC.channelName.replace("{user}", n.member.displayName);
-    try { const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: i.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] }); tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id); await n.member.voice.setChannel(vc); await sendOrUpdateControlPanel(vc); } catch { }
+    try { const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] }); tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id); await n.member.voice.setChannel(vc); await sendOrUpdateControlPanel(vc); } catch { }
     return;
   }
   if (n.channelId && tempChannels.has(n.channelId)) {
