@@ -185,8 +185,8 @@ async function getSettingsPayload(gid, type = "main") {
           { id: "select_cfg_trigger5", ph: "👥 5人部屋トリガーを選択", type: [ChannelType.GuildVoice] }
         ]
       },
-      intro_kick: { title: "📝 未提出者自動整理 設定", desc: `- 📝 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "自動整理", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), select: { id: "select_cfg_introcheck", ph: "📝 提出確認用を選択", type: [ChannelType.GuildText] } },
-      intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", select: { id: "select_cfg_introsource", ph: "📋 ソースを選択", type: [ChannelType.GuildText] } },
+      intro_kick: { title: "📝 未提出者自動整理 設定", desc: `- 📝 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "自動整理", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introcheck", ph: "📝 提出確認用を選択", type: [ChannelType.GuildText] } },
+      intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択", type: [ChannelType.GuildText] } },
       vc: {
         title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限", selects: [
           { id: "select_cfg_male", ph: "♂️ 男性ロールを選択", role: true },
@@ -201,6 +201,7 @@ async function getSettingsPayload(gid, type = "main") {
     embed.setTitle(configs.title).setDescription(`${statusLabel}\n\n${cleanedDesc}`);
     const row1Btns = [createBtn(configs.toggle, `${configs.label}: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger)];
     if (configs.extraBtn) row1Btns.push(configs.extraBtn.setDisabled(!isEnabled));
+    if (configs.extraBtn2) row1Btns.push(configs.extraBtn2.setDisabled(!isEnabled));
     components.push(createRow(row1Btns));
 
     (configs.selects || [configs.select]).filter(Boolean).forEach(s => {
@@ -321,6 +322,27 @@ client.on(Events.InteractionCreate, async (i) => {
       const json = JSON.stringify(data, null, 2);
       return i.reply({ content: `### 📂 データベース内の生データ\n\`\`\`json\n${json.length > 1900 ? json.substring(0, 1900) + "...(省略)" : json}\n\`\`\``, ephemeral: true });
     }
+    if (cid === "cfg_intro_restore") {
+      await i.reply({ content: "⏳ チャンネル内のメッセージをスキャンして復元を開始します...", ephemeral: true });
+      let statusCount = 0, contentCount = 0;
+      const scan = async (cid, isSource) => {
+        const ch = i.guild.channels.cache.get(cid); if (!ch || !ch.isTextBased()) return;
+        let lastId = null;
+        while (true) {
+          const msgs = await ch.messages.fetch({ limit: 100, before: lastId }); if (msgs.size === 0) break;
+          for (const m of msgs.values()) {
+            if (m.author.bot) continue;
+            const data = isSource ? { content: (m.content + (m.attachments.size ? "\n" + m.attachments.map(a => a.url).join("\n") : "")).trim() } : { introduced: true };
+            await Intro.findOneAndUpdate({ guildId: gid, userId: m.author.id }, { $set: data }, { upsert: true });
+            if (isSource) contentCount++; else statusCount++;
+          }
+          lastId = msgs.lastKey();
+        }
+      };
+      if (g.dynamicVC.introCheckChannelId) await scan(g.dynamicVC.introCheckChannelId, false);
+      if (g.dynamicVC.introSourceChannelId) await scan(g.dynamicVC.introSourceChannelId, true);
+      return i.followUp({ content: `✅ 復元が完了しました！\n- 提出ステータス: ${statusCount} 件\n- 自己紹介本文: ${contentCount} 件\nをデータベースに保存しました。`, ephemeral: true });
+    }
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", "")));
 
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled" };
@@ -435,16 +457,39 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
 });
 
 // ─── 自己紹介管理 ──────────────────────────────────────────────────────────
+async function syncIntroHistory(gid) {
+  const g = await getGuildConfig(gid);
+  const checkChId = g.dynamicVC.introCheckChannelId, sourceChId = g.dynamicVC.introSourceChannelId;
+  const guild = client.guilds.cache.get(gid); if (!guild) return;
+
+  const scan = async (cid, isSource) => {
+    const ch = guild.channels.cache.get(cid); if (!ch || !ch.isTextBased()) return;
+    let lastId = null;
+    while (true) {
+      try {
+        const msgs = await ch.messages.fetch({ limit: 100, before: lastId }); if (msgs.size === 0) break;
+        for (const m of msgs.values()) {
+          if (m.author.bot) continue;
+          const data = isSource ? { content: (m.content + (m.attachments.size ? "\n" + m.attachments.map(a => a.url).join("\n") : "")).trim() } : { introduced: true };
+          await Intro.findOneAndUpdate({ guildId: gid, userId: m.author.id }, { $set: data }, { upsert: true });
+        }
+        lastId = msgs.lastKey();
+      } catch { break; }
+    }
+  };
+  if (checkChId) await scan(checkChId, false);
+  if (sourceChId) await scan(sourceChId, true);
+  console.log(`🔄 Guild ${gid}: チャンネル履歴からの同期が完了しました。`);
+}
+
 const handleIntroUpdate = async (msg, type = "create") => {
   if (msg.author?.bot) return;
-  const gid = msg.guildId;
+  const gid = msg.guildId; if (!gid) return;
   const g = await getGuildConfig(gid);
   const checkCh = g.dynamicVC.introCheckChannelId, sourceCh = g.dynamicVC.introSourceChannelId;
   if (![checkCh, sourceCh].includes(msg.channelId)) return;
 
-  const isDel = type === "delete";
-  const uid = msg.author.id;
-
+  const isDel = type === "delete", uid = msg.author.id;
   if (isDel) {
     if (msg.channelId === sourceCh) await Intro.updateOne({ guildId: gid, userId: uid }, { $set: { content: "" } });
   } else {
@@ -472,6 +517,7 @@ client.once(Events.ClientReady, async () => {
     const g = await getGuildConfig(gid);
     await setupSettingsPanel(gid);
     await setupCreatePanel(gid);
+    await syncIntroHistory(gid);
 
     // データ移行 (introDB.json -> MongoDB)
     if (fs.existsSync("./introDB.json")) {
