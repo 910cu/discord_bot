@@ -82,15 +82,64 @@ const defaultMessages = {
 const tempChannels = new Set(), controlPanelMsgIds = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), renameTimestamps = new Map();
 
 // ─── データ管理ユーティリティ ──────────────────────────────────────────────────
+const defaultFeatures = {
+  afkEnabled: false,
+  vcPanelEnabled: false,
+  vcCreationEnabled: false,
+  introKickEnabled: false,
+  vcIntroDisplayEnabled: false,
+  genderRoleEnabled: false
+};
+
+const defaultDynamicVC = {
+  channelName: "{user}のVC",
+  channelName4: "雑談4人部屋",
+  channelName5: "雑談5人部屋",
+  introWarnMinutes: 2880,
+  introKickMinutes: 4320
+};
+
 async function getGuildConfig(gid) {
   let g = await Guild.findOne({ guildId: gid });
-  if (!g && gid === guildId) { // 初期移行用
-    const local = require("./config.json");
-    const msgs = fs.existsSync("./messages.json") ? JSON.parse(fs.readFileSync("./messages.json", "utf-8")) : defaultMessages;
-    g = await Guild.create({ guildId: gid, dynamicVC: local.dynamicVC, roles: local.roles, features: local.features, messages: msgs });
-    console.log(`📦 Guild ${gid} の初期データをインポートしました。`);
+  
+  // 既存データがない、または機能設定が完全に空の場合に移行/初期化を試みる
+  const isNewOrEmpty = !g || (!g.features || Object.keys(g.features).length === 0);
+
+  if (isNewOrEmpty && gid === guildId) {
+    try {
+      const local = require("./config.json");
+      const msgs = fs.existsSync("./messages.json") ? JSON.parse(fs.readFileSync("./messages.json", "utf-8")) : defaultMessages;
+      
+      const initialData = {
+        guildId: gid,
+        dynamicVC: { ...defaultDynamicVC, ...local.dynamicVC },
+        roles: local.roles || {},
+        features: { ...defaultFeatures, ...local.features },
+        messages: msgs
+      };
+
+      if (!g) {
+        g = await Guild.create(initialData);
+        console.log(`📦 Guild ${gid}: 初期データを config.json からインポートしました。`);
+      } else {
+        await Guild.updateOne({ guildId: gid }, { $set: initialData });
+        g = await Guild.findOne({ guildId: gid });
+        console.log(`📦 Guild ${gid}: 既存の空データを config.json の内容で更新しました。`);
+      }
+    } catch (err) {
+      console.error("❌ 初期データ移行エラー:", err);
+    }
   }
-  return g || await Guild.create({ guildId: gid, messages: defaultMessages });
+
+  if (!g) {
+    g = await Guild.create({ 
+      guildId: gid, 
+      dynamicVC: defaultDynamicVC, 
+      features: defaultFeatures, 
+      messages: defaultMessages 
+    });
+  }
+  return g;
 }
 
 async function updateIntro(gid, uid, data) {
@@ -104,8 +153,13 @@ const silentReply = async (i) => { try { await i.reply({ content: "\u200B" }); a
 
 // ─── 設定パネル用ペイロード生成 ──────────────────────────────────────
 async function getSettingsPayload(gid, type = "main") {
-  const g = await getGuildConfig(gid);
-  const { dynamicVC, roles, features, messages } = g;
+  const doc = await getGuildConfig(gid);
+  const g = doc.toObject ? doc.toObject() : doc;
+  const dynamicVC = g.dynamicVC || {};
+  const roles = g.roles || {};
+  const features = { ...defaultFeatures, ...(g.features || {}) };
+  const messages = g.messages || {};
+
   const on = "●", off = "○";
   let embed = new EmbedBuilder().setColor(0x2b2d31);
   let components = [];
@@ -216,9 +270,15 @@ async function getSettingsPayload(gid, type = "main") {
 // ─── パネル更新 ──────────────────────────────────────────────────────────────
 async function setupSettingsPanel(gid) {
   const g = await getGuildConfig(gid);
-  const SETTINGS_CHANNEL_ID = g.dynamicVC.createPanelChannelId || "1496141555705319445"; // fallback or logic
+  const SETTINGS_CHANNEL_ID = g.dynamicVC?.createPanelChannelId || "1496141555705319445"; // fallback
   const channel = client.channels.cache.get(SETTINGS_CHANNEL_ID); if (!channel) return;
-  try { const msgs = await channel.messages.fetch({ limit: 10 }); for (const m of msgs.filter(m => m.author.id === client.user.id).values()) await m.delete().catch(() => { }); } catch { }
+  try { 
+    const msgs = await channel.messages.fetch({ limit: 50 }); 
+    const toDelete = msgs.filter(m => m.author.id === client.user.id);
+    for (const m of toDelete.values()) {
+      await m.delete().catch(() => { });
+    }
+  } catch (err) { console.error("パネル削除エラー:", err.message); }
 
   const meta = { version: (g.meta.version || 0) + 1, lastUpdated: new Date().toISOString() };
   await Guild.updateOne({ guildId: gid }, { $set: { meta } });
@@ -261,6 +321,12 @@ async function sendOrUpdateControlPanel(vc) {
   const oldId = controlPanelMsgIds.get(vc.id), payload = await buildPanelPayload(vc);
   if (oldId) try { await (await vc.messages.fetch(oldId)).edit(payload); return; } catch { }
   try { const s = await vc.send(payload); controlPanelMsgIds.set(vc.id, s.id); } catch { }
+}
+
+async function updateVcName(vc, newName) {
+  const now = Date.now(), last = renameTimestamps.get(vc.id) || 0;
+  if (now - last < 300000) return vc.send("⚠️ 部屋名の変更は5分に1回までです。しばらく待ってからやり直してください。").then(m => setTimeout(() => m.delete().catch(() => { }), 5000));
+  try { await vc.setName(newName); renameTimestamps.set(vc.id, now); await sendOrUpdateControlPanel(vc); } catch (e) { console.error(e); }
 }
 
 async function updateKnockNotifyMessage(vc) {
@@ -414,15 +480,30 @@ client.on(Events.InteractionCreate, async (i) => {
     }
   }
 
-  if (i.isAnySelectMenu() && i.customId.startsWith("select_cfg_")) {
-    const field = i.customId.replace("select_cfg_", ""), val = i.values[0];
-    const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", introcheck: "introCheckChannelId", introsource: "introSourceChannelId" };
-    const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", introcheck: "intro_kick", introsource: "intro_display" };
-    const type = typeMap[field] || "vc";
-    if (map[field]) await Guild.updateOne({ guildId: gid }, { $set: { [`dynamicVC.${map[field]}`]: val } });
-    else await Guild.updateOne({ guildId: gid }, { $set: { [`roles.${field}`]: val } });
-    await i.update(await getSettingsPayload(gid, type));
-    await setupSettingsPanel(gid); if (field === "panel") await setupCreatePanel(gid);
+  if (i.isAnySelectMenu()) {
+    if (i.customId.startsWith("vc_afk_select_")) {
+      const targetUid = i.values[0];
+      const member = await i.guild.members.fetch(targetUid).catch(() => null);
+      if (!member || !member.voice.channelId) return i.reply({ content: "ユーザーがボイスチャンネルにいません。", ephemeral: true });
+      if (!g.dynamicVC.afkChannelId) return i.reply({ content: "AFKチャンネルが設定されていません。", ephemeral: true });
+      try {
+        await member.voice.setChannel(g.dynamicVC.afkChannelId);
+        return i.reply({ content: `✅ <@${targetUid}> をお布団へ運びました。`, ephemeral: true });
+      } catch (e) {
+        return i.reply({ content: `❌ 移動に失敗しました: ${e.message}`, ephemeral: true });
+      }
+    }
+
+    if (i.customId.startsWith("select_cfg_")) {
+      const field = i.customId.replace("select_cfg_", ""), val = i.values[0];
+      const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", introcheck: "introCheckChannelId", introsource: "introSourceChannelId" };
+      const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", introcheck: "intro_kick", introsource: "intro_display" };
+      const type = typeMap[field] || "vc";
+      if (map[field]) await Guild.updateOne({ guildId: gid }, { $set: { [`dynamicVC.${map[field]}`]: val } });
+      else await Guild.updateOne({ guildId: gid }, { $set: { [`roles.${field}`]: val } });
+      await i.update(await getSettingsPayload(gid, type));
+      await setupSettingsPanel(gid); if (field === "panel") await setupCreatePanel(gid);
+    }
   }
 });
 
