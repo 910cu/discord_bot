@@ -469,7 +469,7 @@ client.on(Events.InteractionCreate, async (i) => {
 
     if (cid === "config_intro_time") return i.showModal(new ModalBuilder().setCustomId("intro_time_modal").setTitle("期限設定").addComponents(createRow([new TextInputBuilder().setCustomId("warn").setLabel("警告(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introWarnMinutes || 2880))]), createRow([new TextInputBuilder().setCustomId("kick").setLabel("キック(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introKickMinutes || 4320))])));
     if (cid === "config_trigger_names") return i.showModal(new ModalBuilder().setCustomId("trigger_name_modal").setTitle("部屋名テンプレート設定").addComponents(
-      createRow([new TextInputBuilder().setCustomId("name_free").setLabel("自由枠 ({user}使用可)").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.channelName).setRequired(true)]),
+      createRow([new TextInputBuilder().setCustomId("name_free").setLabel("自由枠 ({user}使用可)").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.channelName || "{user}のVC").setRequired(true)]),
       createRow([new TextInputBuilder().setCustomId("name4").setLabel("4人部屋").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.channelName4 || "雑談4人部屋").setRequired(true)]),
       createRow([new TextInputBuilder().setCustomId("name5").setLabel("5人部屋").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.channelName5 || "雑談5人部屋").setRequired(true)])
     ));
