@@ -19,16 +19,81 @@ const {
   RoleSelectMenuBuilder,
 } = require("discord.js");
 const fs = require("fs");
-let { clientId, guildId, dynamicVC, roles, features: featuresConfig } = require("./config.json");
-// 機能ON/OFFフラグ（config.jsonのfeaturesから読み込み、実行時に変更可能）
-const features = Object.assign({
-  introKickEnabled: true,
-  genderRoleEnabled: true,
-  vcIntroDisplayEnabled: true,
-  afkEnabled: true,
-  vcPanelEnabled: true,
-  vcCreationEnabled: true
-}, featuresConfig || {});
+
+// ─── 設定管理 ────────────────────────────────────────────────────────────
+const CONFIG_PATH = "./config.json";
+const GUILD_CONFIGS_PATH = "./guildConfigs.json";
+
+let { clientId } = require(CONFIG_PATH);
+
+// デフォルト設定
+const defaultGuildConfig = {
+  settingsChannelId: null,
+  channels: {
+    welcome: null,
+    log: null
+  },
+  dynamicVC: {
+    triggerChannelId: null,
+    cleanupCategoryId: null,
+    channelName: "{user}のVC",
+    userLimit: 0,
+    createPanelChannelId: null,
+    afkChannelId: null,
+    introChannelId: null,
+    introWarnMinutes: 1,
+    introKickMinutes: 3,
+    introCheckChannelId: null,
+    introSourceChannelId: null,
+    triggerChannelId4: null,
+    triggerChannelId5: null
+  },
+  roles: {
+    male: null,
+    female: null
+  },
+  features: {
+    introKickEnabled: true,
+    genderRoleEnabled: true,
+    vcIntroDisplayEnabled: true,
+    afkEnabled: true,
+    vcPanelEnabled: true,
+    vcCreationEnabled: true
+  }
+};
+
+function loadGuildConfigs() {
+  if (fs.existsSync(GUILD_CONFIGS_PATH)) {
+    return JSON.parse(fs.readFileSync(GUILD_CONFIGS_PATH, "utf-8"));
+  }
+  return {};
+}
+
+function saveGuildConfigs(configs) {
+  fs.writeFileSync(GUILD_CONFIGS_PATH, JSON.stringify(configs, null, 2));
+}
+
+function getGuildConfig(guildId) {
+  const configs = loadGuildConfigs();
+  const guildConfig = configs[guildId] || {};
+
+  // デフォルト設定とマージ（深いマージ）
+  return {
+    ...defaultGuildConfig,
+    ...guildConfig,
+    dynamicVC: { ...defaultGuildConfig.dynamicVC, ...(guildConfig.dynamicVC || {}) },
+    roles: { ...defaultGuildConfig.roles, ...(guildConfig.roles || {}) },
+    features: { ...defaultGuildConfig.features, ...(guildConfig.features || {}) },
+    channels: { ...defaultGuildConfig.channels, ...(guildConfig.channels || {}) }
+  };
+}
+
+function updateGuildConfig(guildId, updateFn) {
+  const configs = loadGuildConfigs();
+  const current = configs[guildId] || {};
+  configs[guildId] = updateFn(current);
+  saveGuildConfigs(configs);
+}
 
 // ─── ヘルパー関数 ────────────────────────────────────────────────────────────
 const createBtn = (id, label, style = ButtonStyle.Secondary, disabled = false) =>
@@ -154,18 +219,15 @@ client.commands = new Collection();
 for (const cmd of allCommands) client.commands.set(cmd.data.name, cmd);
 
 // ─── スラッシュコマンドをDiscordへデプロイ ────────────────────────────────────
-async function deployCommands(targetGuildId = null) {
+async function deployCommands() {
   const rest = new REST().setToken(token);
   try {
-    const route = targetGuildId 
-      ? Routes.applicationGuildCommands(clientId, targetGuildId)
-      : Routes.applicationGuildCommands(clientId, guildId);
-
+    // グローバルコマンドとして登録（全てのサーバーで利用可能になる）
     const data = await rest.put(
-      route,
+      Routes.applicationCommands(clientId),
       { body: allCommands.map((c) => c.data.toJSON()) }
     );
-    console.log(`✅ [Deploy] ${targetGuildId ? `Guild:${targetGuildId}` : "Global/Default"} に ${data.length} 件のコマンドを登録しました。`);
+    console.log(`✅ [Deploy] グローバルに ${data.length} 件のコマンドを登録しました。`);
   } catch (err) {
     console.error("コマンド登録エラー:", err);
   }
@@ -173,67 +235,40 @@ async function deployCommands(targetGuildId = null) {
 
 // ─── 設定パネルを設置 ────────────────────────────────────────────────────────
 
-function saveFeatures() {
-  const configPath = "./config.json";
-  const fileData = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  fileData.features = { ...features };
-  fs.writeFileSync(configPath, JSON.stringify(fileData, null, 2));
-}
-
-function bumpPanelVersion() {
-  const configPath = "./config.json";
-  const fileData = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-  const meta = fileData.meta || { version: 0, lastUpdated: null };
-  meta.version = (meta.version || 0) + 1;
-  meta.lastUpdated = new Date().toISOString();
-  fileData.meta = meta;
-  fs.writeFileSync(configPath, JSON.stringify(fileData, null, 2));
-  return meta;
-}
-
-async function setupSettingsPanel(overrideId) {
-  if (overrideId) {
-    const data = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
-    data.settingsChannelId = overrideId;
-
-    // 現在のチャンネルからギルドIDを取得して更新
-    const chan = client.channels.cache.get(overrideId);
-    if (chan && chan.guild) {
-      data.guildId = chan.guild.id;
-      guildId = chan.guild.id; // グローバル変数も更新
-    }
-    dynamicVC = data.dynamicVC || dynamicVC;
-    roles = data.roles || roles;
-
-    fs.writeFileSync("./config.json", JSON.stringify(data, null, 2));
+async function setupSettingsPanel(guildId, overrideChannelId = null) {
+  if (overrideChannelId) {
+    updateGuildConfig(guildId, (current) => ({
+      ...current,
+      settingsChannelId: overrideChannelId
+    }));
   }
-  
-  const currentConfig = JSON.parse(fs.readFileSync("./config.json", "utf-8"));
-  const channel = await client.channels.fetch(currentConfig.settingsChannelId).catch(() => null);
+
+  const config = getGuildConfig(guildId);
+  if (!config.settingsChannelId) return;
+
+  const channel = await client.channels.fetch(config.settingsChannelId).catch(() => null);
   if (!channel) return;
+
   try {
     const msgs = await channel.messages.fetch({ limit: 10 });
     for (const m of msgs.filter(m => m.author.id === client.user.id).values()) await m.delete().catch(() => { });
   } catch { }
 
-  const meta = bumpPanelVersion(), updated = new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", hour12: false });
+  const meta = { version: 1, lastUpdated: new Date().toISOString() }; // バージョン管理は簡易化
+  const updated = new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", hour12: false });
   let desc = `-# Version ${meta.version}.0.0 ｜ System: Operational\n\n`;
 
-  // 1. VC内機能の設定
   desc += `### 🎙️ VC内機能の設定 [Voice Features]\n`;
   desc += `-# AFK / 自己紹介表示 / 部屋制限 の設定です。\n\n`;
 
-  // 2. VC作成用チャンネルの設定
   desc += `### 📺 VC作成用チャンネルの設定 [Channel Config]\n`;
   desc += `-# VC作成パネルの設置場所や、自動作成のトリガーの設定です。\n\n`;
 
-  // 3. 自己紹介未提出者整理
-  if (features.introKickEnabled) {
+  if (config.features.introKickEnabled) {
     desc += `### 📝 自己紹介未提出者整理 [Profile Guard]\n`;
     desc += `-# 未提出者への警告や自動キックの設定です。\n\n`;
   }
 
-  // 4. メッセージ設定
   desc += `### 💬 メッセージ設定 [Messages]\n`;
   desc += `-# 各種通知メッセージの編集です。\n`;
 
@@ -248,7 +283,8 @@ async function setupSettingsPanel(overrideId) {
 
 // ─── サブパネル用ペイロード生成 ──────────────────────────────────────────────
 
-function getMainSettingsPayload() {
+function getMainSettingsPayload(guildId) {
+  const config = getGuildConfig(guildId);
   let description = ``;
 
   description += `### 🎙️ VC内機能の設定 [Voice Features]\n`;
@@ -257,7 +293,7 @@ function getMainSettingsPayload() {
   description += `### 📺 VC作成用チャンネルの設定 [Channel Config]\n`;
   description += `-# VC作成パネルの設置場所や、自動作成のトリガーの設定です。\n\n`;
 
-  if (features.introKickEnabled) {
+  if (config.features.introKickEnabled) {
     description += `### 📝 自己紹介未提出者整理 [Profile Guard]\n`;
     description += `-# 未提出者への警告や自動キックの設定です。\n\n`;
   }
@@ -283,7 +319,10 @@ function getMainSettingsPayload() {
   return { content: null, embeds: [embed], components: [row1, row2], ephemeral: true };
 }
 
-function getVCSubSettingsPayload() {
+function getVCSubSettingsPayload(guildId) {
+  const config = getGuildConfig(guildId);
+  const { dynamicVC, roles } = config;
+
   let description = `### 🎙️ VC内機能の設定 [Voice Features]\n`;
   description += `-# ボイスチャンネル内での動作に関する設定です。\n\n`;
 
@@ -314,8 +353,10 @@ function getVCSubSettingsPayload() {
   return { content: null, embeds: [embed], components: [row1, row2], ephemeral: true };
 }
 
-function getChanSubSettingsPayload(guild = null) {
-  const check = (id) => id && guild?.channels.cache.has(id) ? `<#${id}>` : "`未設定`";
+function getChanSubSettingsPayload(guild) {
+  const config = getGuildConfig(guild.id);
+  const { dynamicVC } = config;
+  const check = (id) => id && guild.channels.cache.has(id) ? `<#${id}>` : "`未設定`";
 
   let description = `### 📺 VC作成用チャンネルの設定 [Channel Config]\n`;
   description += `-# VC作成の起点となる場所の設定です。\n\n`;
@@ -351,9 +392,10 @@ function getChanSubSettingsPayload(guild = null) {
   return { content: null, embeds: [embed], components: [row1, row2], ephemeral: true };
 }
 
-function getAFKSettingsPayload() {
-  const en = features.afkEnabled;
-  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n詳細: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "未設定"}`;
+function getAFKSettingsPayload(guildId) {
+  const config = getGuildConfig(guildId);
+  const en = config.features.afkEnabled;
+  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n詳細: ${config.dynamicVC.afkChannelId ? `<#${config.dynamicVC.afkChannelId}>` : "未設定"}`;
   const rows = [
     createRow(createBtn("toggle_afk", `AFK機能: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_afk").setPlaceholder(en ? "移動先を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!en)),
@@ -361,9 +403,10 @@ function getAFKSettingsPayload() {
   ];
   return { embeds: [createEmbed(desc, 0x2b2d31, "💤 AFK設定")], components: rows, ephemeral: true };
 }
-function getPanelSettingsPayload() {
-  const en = features.vcPanelEnabled;
-  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n設置先: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "未設定"}`;
+function getPanelSettingsPayload(guildId) {
+  const config = getGuildConfig(guildId);
+  const en = config.features.vcPanelEnabled;
+  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n設置先: ${config.dynamicVC.createPanelChannelId ? `<#${config.dynamicVC.createPanelChannelId}>` : "未設定"}`;
   const rows = [
     createRow(createBtn("toggle_panel", `パネル機能: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_panel").setPlaceholder(en ? "設置先を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildText]).setDisabled(!en)),
@@ -371,9 +414,10 @@ function getPanelSettingsPayload() {
   ];
   return { embeds: [createEmbed(desc, 0x2b2d31, "🛠️ パネル設置場所")], components: rows, ephemeral: true };
 }
-function getCategorySettingsPayload(guild = null) {
-  const check = (id) => id && guild?.channels.cache.has(id) ? `<#${id}>` : "未設定";
-  const desc = `現在のカテゴリ: ${check(dynamicVC.cleanupCategoryId)}\n\n作成されたVCが配置されるカテゴリ（フォルダ）を選択してください。`;
+function getCategorySettingsPayload(guild) {
+  const config = getGuildConfig(guild.id);
+  const check = (id) => id && guild.channels.cache.has(id) ? `<#${id}>` : "未設定";
+  const desc = `現在のカテゴリ: ${check(config.dynamicVC.cleanupCategoryId)}\n\n作成されたVCが配置されるカテゴリ（フォルダ）を選択してください。`;
   const rows = [
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_category").setPlaceholder("カテゴリを選択").setChannelTypes([ChannelType.GuildCategory])),
     createRow(createBtn("cfg_back_chan_sub", "⬅️ 戻る"))
@@ -381,10 +425,11 @@ function getCategorySettingsPayload(guild = null) {
   return { embeds: [createEmbed(desc, 0x2b2d31, "📂 VC作成先カテゴリ")], components: rows, ephemeral: true };
 }
 
-function getVCCreationSettingsPayload(guild = null) {
-  const en = features.vcCreationEnabled;
-  const check = (id) => id && guild?.channels.cache.has(id) ? `<#${id}>` : "未設定";
-  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n自由: ${check(dynamicVC.triggerChannelId)}\n4人/5人: ${check(dynamicVC.triggerChannelId4)} / ${check(dynamicVC.triggerChannelId5)}`;
+function getVCCreationSettingsPayload(guild) {
+  const config = getGuildConfig(guild.id);
+  const en = config.features.vcCreationEnabled;
+  const check = (id) => id && guild.channels.cache.has(id) ? `<#${id}>` : "未設定";
+  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n自由: ${check(config.dynamicVC.triggerChannelId)}\n4人/5人: ${check(config.dynamicVC.triggerChannelId4)} / ${check(config.dynamicVC.triggerChannelId5)}`;
   const rows = [
     createRow(createBtn("toggle_vc_creation", `自動作成機能: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_trigger").setPlaceholder(en ? "自由枠を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!en)),
@@ -394,9 +439,10 @@ function getVCCreationSettingsPayload(guild = null) {
   ];
   return { embeds: [createEmbed(desc, 0x2b2d31, "➕ VC自動作成設定")], components: rows, ephemeral: true };
 }
-function getIntroKickSettingsPayload() {
-  const en = features.introKickEnabled;
-  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n確認先: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "未設定"}\n警告/実行: ${dynamicVC.introWarnMinutes}分 / ${dynamicVC.introKickMinutes}分`;
+function getIntroKickSettingsPayload(guildId) {
+  const config = getGuildConfig(guildId);
+  const en = config.features.introKickEnabled;
+  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n確認先: ${config.dynamicVC.introCheckChannelId ? `<#${config.dynamicVC.introCheckChannelId}>` : "未設定"}\n警告/実行: ${config.dynamicVC.introWarnMinutes}分 / ${config.dynamicVC.introKickMinutes}分`;
   const rows = [
     createRow(createBtn("toggle_intro_kick", `自動整理: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary, !en)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_introcheck").setPlaceholder(en ? "確認先を選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildText]).setDisabled(!en)),
@@ -404,9 +450,10 @@ function getIntroKickSettingsPayload() {
   ];
   return { embeds: [createEmbed(desc, 0x5865f2, "📝 自己紹介未提出者整理")], components: rows, ephemeral: true };
 }
-function getIntroDisplaySettingsPayload() {
-  const en = features.vcIntroDisplayEnabled;
-  const desc = `ステータス: ${en ? "🟩" : "🟥"}\nソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "未設定"}`;
+function getIntroDisplaySettingsPayload(guildId) {
+  const config = getGuildConfig(guildId);
+  const en = config.features.vcIntroDisplayEnabled;
+  const desc = `ステータス: ${en ? "🟩" : "🟥"}\nソース: ${config.dynamicVC.introSourceChannelId ? `<#${config.dynamicVC.introSourceChannelId}>` : "未設定"}`;
   const rows = [
     createRow(createBtn("toggle_vc_intro", `表示: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new ChannelSelectMenuBuilder().setCustomId("select_cfg_introsource").setPlaceholder(en ? "ソースを選択" : "⛔ 無効").setChannelTypes([ChannelType.GuildText]).setDisabled(!en)),
@@ -414,9 +461,10 @@ function getIntroDisplaySettingsPayload() {
   ];
   return { embeds: [createEmbed(desc, 0x5865f2, "🖼️ VC内表示設定")], components: rows, ephemeral: true };
 }
-function getVCSettingsPayload() {
-  const en = features.genderRoleEnabled;
-  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n♂️ ${roles.male ? `<@&${roles.male}>` : "未設定"} / ♀️ ${roles.female ? `<@&${roles.female}>` : "未設定"}`;
+function getVCSettingsPayload(guildId) {
+  const config = getGuildConfig(guildId);
+  const en = config.features.genderRoleEnabled;
+  const desc = `ステータス: ${en ? "🟩" : "🟥"}\n♂️ ${config.roles.male ? `<@&${config.roles.male}>` : "未設定"} / ♀️ ${config.roles.female ? `<@&${config.roles.female}>` : "未設定"}`;
   const rows = [
     createRow(createBtn("toggle_gender", `部屋制限: ${en ? "有効" : "無効"}`, en ? ButtonStyle.Success : ButtonStyle.Danger)),
     createRow(new RoleSelectMenuBuilder().setCustomId("select_cfg_male").setPlaceholder(en ? "♂️ 男性を選択" : "⛔ 無効").setDisabled(!en)),
@@ -429,8 +477,9 @@ function getVCSettingsPayload() {
 
 
 // ─── VC作成パネルをテキストチャンネルに設置 ──────────────────────────────────
-async function setupCreatePanel() {
-  const channelId = dynamicVC.createPanelChannelId;
+async function setupCreatePanel(guildId) {
+  const config = getGuildConfig(guildId);
+  const channelId = config.dynamicVC.createPanelChannelId;
   if (!channelId) return;
   try {
     const channel = await client.channels.fetch(channelId);
@@ -452,9 +501,9 @@ async function setupCreatePanel() {
       new ButtonBuilder().setCustomId("create_vc_5").setLabel("👥 雑談5人部屋作成").setStyle(ButtonStyle.Primary)
     );
     await channel.send({ embeds: [embed], components: [button] });
-    console.log("[Panel] VC作成パネルを設置しました。");
+    console.log(`[Panel] Guild:${guildId} VC作成パネルを設置しました。`);
   } catch (err) {
-    console.error("[Panel] パネル設置エラー:", err.message);
+    console.error(`[Panel] Guild:${guildId} パネル設置エラー:`, err.message);
   }
 }
 
@@ -508,21 +557,23 @@ async function updateProfileMessage(vc) {
 
 // ─── コントロールパネルのpayloadを生成 ───────────────────────────────────────
 function buildPanelPayload(vc) {
+  const config = getGuildConfig(vc.guild.id);
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, ownerId = vcOwners.get(vc.id), isLimitLocked = limitLockedVCs.has(vc.id);
   const gl = gender === "male" ? "♂️ 男性のみ" : gender === "female" ? "♀️ 女性のみ" : "👥 制限なし", ll = (vc.userLimit ?? 0) === 0 ? "∞ 無制限" : `${vc.userLimit}人`;
   const desc = `### 👑 部屋主 [Owner]\n> <@${ownerId}>\n\n▼ **設定状況 [Status]**\n> 状態 ─ ${locked ? "🔴 **LOCKED**" : "🟢 **OPEN**"}\n> 上限 ─ \`${ll}\`\n> 制限 ─ \`${gl}\`\n\n-# 🛡️ 制限・名前変更は**部屋主のみ**可\n-# 🛏️ お布団は**誰でも**可`;
-  if (isLimitLocked) return { embeds: [createEmbed(desc, locked ? 0xe74c3c : 0x57f287)], components: [createRow(createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !features.afkEnabled))] };
-  const row1 = createRow(createBtn("vc_rename", "✏️ 部屋名変更"), createBtn("vc_toggle_lock", locked ? "🔓 ロック解除" : "🔒 ロックする", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 部屋制限", ButtonStyle.Secondary, !features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !features.afkEnabled));
+  if (isLimitLocked) return { embeds: [createEmbed(desc, locked ? 0xe74c3c : 0x57f287)], components: [createRow(createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !config.features.afkEnabled))] };
+  const row1 = createRow(createBtn("vc_rename", "✏️ 部屋名変更"), createBtn("vc_toggle_lock", locked ? "🔓 ロック解除" : "🔒 ロックする", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 部屋制限", ButtonStyle.Secondary, !config.features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !config.features.afkEnabled));
   const components = [row1];
   if (locked) components.push(createRow(createBtn("label_knock", "【参加希望】", ButtonStyle.Secondary, true), createBtn(`vc_knock_${vc.id}`, "🚪 ノックして参加をリクエスト", ButtonStyle.Success)));
   return { embeds: [createEmbed(desc, locked ? 0xe74c3c : 0x57f287)], components };
 }
 
 function buildVCSettingsPayload(vc) {
+  const config = getGuildConfig(vc.guild.id);
   const gender = genderMode.get(vc.id) ?? null, userLimit = vc.userLimit ?? 0;
   const gl = gender === "male" ? "♂️ 男性のみ" : gender === "female" ? "♀️ 女性のみ" : "👥 制限なし", ll = userLimit === 0 ? "∞ 無制限" : `${userLimit}人`;
   const desc = `現在の設定状況:\n> 人数制限 ─ ${ll}\n> 性別制限 ─ ${gl}\n\n下のボタンで設定を変更できます。`;
-  const gStyle = (m) => gender === m ? ButtonStyle.Success : ButtonStyle.Secondary, lStyle = (n) => userLimit === n ? ButtonStyle.Success : ButtonStyle.Secondary, gDis = !features.genderRoleEnabled;
+  const gStyle = (m) => gender === m ? ButtonStyle.Success : ButtonStyle.Secondary, lStyle = (n) => userLimit === n ? ButtonStyle.Success : ButtonStyle.Secondary, gDis = !config.features.genderRoleEnabled;
   return {
     embeds: [createEmbed(desc, 0x2b2d31, `🛡️ 部屋制限設定 | ${vc.name}`)],
     components: [
@@ -652,17 +703,37 @@ async function sendBioPrompt(vc, member) {
 client.once(Events.ClientReady, async (c) => {
   console.log(`🤖 ${c.user.tag} でログインしました。`);
   await deployCommands();
-  await setupCreatePanel();
+
+  // 全てのギルドでパネルをセットアップ
+  const configs = loadGuildConfigs();
+  for (const guildId of Object.keys(configs)) {
+    await setupCreatePanel(guildId);
+  }
+});
+
+// ギルド参加時にコマンドをデプロイ（念のため）
+client.on(Events.GuildCreate, async (guild) => {
+  console.log(`🏠 ギルド参加: ${guild.name} (${guild.id})`);
+  // グローバルコマンドなので即座には反映されない場合があるが、基本的には全ギルドで使える
 });
 
 // ─── インタラクション処理 ─────────────────────────────────────────────────────
 client.on(Events.InteractionCreate, async (interaction) => {
+  const guildId = interaction.guildId;
+  if (!guildId) return;
+  const config = getGuildConfig(guildId);
 
   // ── スラッシュコマンド ────────────────────────────────────────────────────
   if (interaction.isChatInputCommand()) {
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
-    try { await command.execute(interaction); }
+    try {
+      // setupコマンドのみ特殊処理
+      if (interaction.commandName === "setup") {
+        global.__setupSettingsPanel = async (cid) => await setupSettingsPanel(guildId, cid);
+      }
+      await command.execute(interaction);
+    }
     catch (err) {
       console.error(err);
       const msg = { content: "コマンドの実行中にエラーが発生しました。", ephemeral: true };
@@ -677,7 +748,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
   // ── ボタン：VC作成パネル → Modal ─────────────────────────────────────────
   if (interaction.isButton() && (interaction.customId === "create_vc_panel" || interaction.customId === "create_vc_4" || interaction.customId === "create_vc_5")) {
     // ★ 機能オフ時は拒否
-    if (!features.vcPanelEnabled) {
+    if (!config.features.vcPanelEnabled) {
       await interaction.reply({ content: "⛔ VC作成パネル機能は現在無効です。", ephemeral: true });
       setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
       return;
@@ -713,14 +784,14 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const vcName = interaction.fields.getTextInputValue("create_vc_name");
     const member = interaction.member;
 
-    let limit = dynamicVC.userLimit ?? 0;
+    let limit = config.dynamicVC.userLimit ?? 0;
     if (interaction.customId === "create_vc_modal_4") limit = 4;
     if (interaction.customId === "create_vc_modal_5") limit = 5;
 
     await silentReply(interaction);
     try {
       const guild = interaction.guild;
-      const categoryId = dynamicVC.cleanupCategoryId;
+      const categoryId = config.dynamicVC.cleanupCategoryId;
       // カテゴリが存在するか確認
       const parent = categoryId && guild.channels.cache.has(categoryId) ? categoryId : null;
 
@@ -772,10 +843,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!vc || !tempChannels.has(vc.id)) { await interaction.deferUpdate(); return; }
     if (vcOwners.get(vc.id) !== interaction.user.id) { await interaction.deferUpdate(); return; }
 
-    // ★ 機能オフ時はサブメニューを開かない（buildVCSettingsPayloadで無効化されているが念のため）
-    if (!features.genderRoleEnabled) { await interaction.deferUpdate(); return; }
+    // ★ 機能オフ時はサブメニューを開かない
+    if (!config.features.genderRoleEnabled) { await interaction.deferUpdate(); return; }
 
-    // ★ interaction.update() でメインパネルをサブメニューに置き換え（前の表示が消える）
     await interaction.update(buildVCSettingsPayload(vc));
     return;
   }
@@ -786,7 +856,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!vc || !tempChannels.has(vc.id)) { await interaction.deferUpdate(); return; }
     if (vcOwners.get(vc.id) !== interaction.user.id) { await interaction.deferUpdate(); return; }
 
-    // ★ interaction.update() でサブメニューをメインパネルに置き換え
     await interaction.update(buildPanelPayload(vc));
     return;
   }
@@ -797,8 +866,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     if (!vc || !tempChannels.has(vc.id)) { await interaction.deferUpdate(); return; }
     if (vcOwners.get(vc.id) !== interaction.user.id) { await interaction.deferUpdate(); return; }
 
-    // ★ 機能オフ時は操作不可
-    if (!features.genderRoleEnabled) { await interaction.deferUpdate(); return; }
+    if (!config.features.genderRoleEnabled) { await interaction.deferUpdate(); return; }
 
     const mode = interaction.customId === "vc_gender_male" ? "male"
       : interaction.customId === "vc_gender_female" ? "female"
@@ -809,7 +877,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (mode === null) { genderMode.delete(vc.id); } else { genderMode.set(vc.id, mode); }
 
-    // ★ サブパネルをその場で更新（前の表示が消える）
     await interaction.update(buildVCSettingsPayload(vc));
 
     try {
@@ -819,8 +886,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
           { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] },
         ]);
       } else {
-        const allowId = mode === "male" ? roles.male : roles.female;
-        const denyId = mode === "male" ? roles.female : roles.male;
+        const allowId = mode === "male" ? config.roles.male : config.roles.female;
+        const denyId = mode === "male" ? config.roles.female : config.roles.male;
         await vc.permissionOverwrites.set([
           { id: vc.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
           { id: allowId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
@@ -850,7 +917,6 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     const limit = parseInt(interaction.customId.replace("vc_limit_", ""), 10);
     await vc.setUserLimit(limit);
-    // ★ サブパネルをその場で更新
     await interaction.update(buildVCSettingsPayload(vc));
     console.log(`[Limit] 人数上限変更: ${limit === 0 ? "無制限" : limit + "人"} (${vc.name})`);
     return;
@@ -922,8 +988,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── ボタン：寝落ちした人をAFKへ移動 ─────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "vc_afk_prompt") {
-    // ★ 機能オフ時は拒否
-    if (!features.afkEnabled) {
+    if (!config.features.afkEnabled) {
       await interaction.reply({ content: "⛔ AFK機能は現在無効です。", ephemeral: true });
       setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
       return;
@@ -971,38 +1036,38 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
 
     try {
-      const AFK_CHANNEL_ID = dynamicVC.afkChannelId || "1496142556042498278";
+      const AFK_CHANNEL_ID = config.dynamicVC.afkChannelId;
+      if (!AFK_CHANNEL_ID) throw new Error("AFKチャンネルが設定されていません。");
       await targetMember.voice.setChannel(AFK_CHANNEL_ID, `寝落ち移動 by ${interaction.user.tag}`);
       await interaction.update({ content: `✅ <@${targetMember.id}> をお布団へ運びました！ゆっくり休んでね💤`, components: [] });
       console.log(`[AFK] ${targetMember.user.tag} をAFKへ移動しました (by ${interaction.user.tag})`);
       setTimeout(() => { interaction.deleteReply().catch(() => { }); }, 3000);
     } catch (err) {
       console.error("[AFK] 移動エラー:", err.message);
-      await interaction.update({ content: "⚠️ 移動に失敗しました。BOTの権限などを確認してください。", components: [] });
+      await interaction.update({ content: "⚠️ 移動に失敗しました。BOTの権限やAFKチャンネル設定を確認してください。", components: [] });
     }
     return;
   }
 
   // ── 設定パネルの期限設定ボタン（Modal表示） ──────────────────────────────────
   if (interaction.isButton() && interaction.customId === "config_intro_time") {
-    // ★ 機能オフ時は操作不可（buildPayload側でdisabledにしているが念のため）
-    if (!features.introKickEnabled) {
+    if (!config.features.introKickEnabled) {
       await interaction.reply({ content: "⛔ 自動整理機能が無効のため設定できません。", ephemeral: true });
       setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
       return;
     }
 
     const modal = new ModalBuilder().setCustomId("config_intro_modal").setTitle("⏱️ 自己紹介の期限設定");
-    const currentWarn = dynamicVC.introWarnMinutes || 2880;
-    const currentKick = dynamicVC.introKickMinutes || 4320;
+    const currentWarn = config.dynamicVC.introWarnMinutes || 1;
+    const currentKick = config.dynamicVC.introKickMinutes || 3;
 
     modal.addComponents(
       new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("warn_minutes").setLabel("警告までの分数 (例: 2880 = 2日)")
+        new TextInputBuilder().setCustomId("warn_minutes").setLabel("警告までの分数")
           .setStyle(TextInputStyle.Short).setValue(String(currentWarn)).setRequired(true)
       ),
       new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId("kick_minutes").setLabel("キックまでの分数 (例: 4320 = 3日)")
+        new TextInputBuilder().setCustomId("kick_minutes").setLabel("キックまでの分数")
           .setStyle(TextInputStyle.Short).setValue(String(currentKick)).setRequired(true)
       )
     );
@@ -1012,10 +1077,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
   // ── 設定パネルの期限設定モーダル処理 ────────────────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId === "config_intro_modal") {
-    const warnStr = interaction.fields.getTextInputValue("warn_minutes");
-    const kickStr = interaction.fields.getTextInputValue("kick_minutes");
-    const warnVal = parseInt(warnStr, 10);
-    const kickVal = parseInt(kickStr, 10);
+    const warnVal = parseInt(interaction.fields.getTextInputValue("warn_minutes"), 10);
+    const kickVal = parseInt(interaction.fields.getTextInputValue("kick_minutes"), 10);
 
     if (isNaN(warnVal) || isNaN(kickVal) || warnVal < 1 || kickVal <= warnVal) {
       await interaction.reply({ content: "⚠️ 入力値が正しくありません。（分数は1以上、かつキックまでの分数は警告より大きくしてください）", ephemeral: true });
@@ -1023,23 +1086,17 @@ client.on(Events.InteractionCreate, async (interaction) => {
       return;
     }
 
-    const configPath = "./config.json";
-    const configData = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    updateGuildConfig(guildId, (curr) => ({
+      ...curr,
+      dynamicVC: { ...curr.dynamicVC, introWarnMinutes: warnVal, introKickMinutes: kickVal }
+    }));
 
-    configData.dynamicVC.introWarnMinutes = warnVal;
-    configData.dynamicVC.introKickMinutes = kickVal;
-    dynamicVC.introWarnMinutes = warnVal;
-    dynamicVC.introKickMinutes = kickVal;
-
-    fs.writeFileSync(configPath, JSON.stringify(configData, null, 2));
-
-    // ★ update() で既存の表示を置き換え（前の表示が消える）
     await interaction.update({ content: `✅ 期限タイミングを更新しました！（警告: ${warnVal}分後 / キック: ${kickVal}分後）`, embeds: [], components: [] });
-    await setupSettingsPanel();
+    await setupSettingsPanel(guildId);
     return;
   }
 
-  // ── 設定パネルの各ボタン（メッセージ設定） ────────────────────────────────────────────────────────
+  // ── メッセージ設定 ────────────────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "config_messages") {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId("modal_msg_intro").setLabel("📝 自己紹介関連を編集").setStyle(ButtonStyle.Primary),
@@ -1047,7 +1104,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
     );
 
     await interaction.reply({
-      content: "📝 **メッセージ設定**\n編集するメッセージのカテゴリを選んでください。\n一覧で編集できます。（※ `{user}` などの変数は消さずに残してください）",
+      content: "📝 **メッセージ設定**\n編集するメッセージのカテゴリを選んでください。\n（※メッセージ設定は現在全サーバー共通です）",
       components: [row],
       ephemeral: true
     });
@@ -1096,91 +1153,59 @@ client.on(Events.InteractionCreate, async (interaction) => {
     return;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // ★ 設定パネルの各サブ設定ボタン（既存の表示を消してサブパネルを表示）
-  // interaction.reply() ではなく interaction.update() を使って排他的に表示する
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  // ── ⬅️ サブパネルからメイン設定パネルへ戻る ──────────────────────────────
+  // ── ⬅️ ナビゲーション ──────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_back_main") {
-    await interaction.update(getMainSettingsPayload());
+    await interaction.update(getMainSettingsPayload(guildId));
     return;
   }
-
-  // ── ⬅️ VC機能設定サブフォルダへ戻る ──────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_back_vc_sub") {
-    await interaction.update(getVCSubSettingsPayload());
+    await interaction.update(getVCSubSettingsPayload(guildId));
     return;
   }
-
-  // ── ⬅️ VC内機能設定サブフォルダへ戻る ──────────────────────────────
-  if (interaction.isButton() && interaction.customId === "cfg_back_vc_sub") {
-    await interaction.update(getVCSubSettingsPayload());
-    return;
-  }
-
-  // ── ⬅️ チャンネル設定サブフォルダへ戻る ──────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_back_chan_sub") {
-    await interaction.update(getChanSubSettingsPayload());
-    return;
-  }
-
-  // ── 🎙️ VC内機能の設定（サブフォルダ） ──────────────────────────────────
-  if (interaction.isButton() && interaction.customId === "cfg_btn_vc_sub") {
-    await interaction.update(getVCSubSettingsPayload());
-    return;
-  }
-
-  // ── 📺 VC作成用チャンネルの設定（サブフォルダ） ──────────────────────────────────
-  if (interaction.isButton() && interaction.customId === "cfg_btn_chan_sub") {
     await interaction.update(getChanSubSettingsPayload(interaction.guild));
     return;
   }
 
-  // ── 📂 VC作成先カテゴリの設定 ──────────────────────────────────────────
+  // ── サブフォルダ表示 ──────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "cfg_btn_vc_sub") {
+    await interaction.update(getVCSubSettingsPayload(guildId));
+    return;
+  }
+  if (interaction.isButton() && interaction.customId === "cfg_btn_chan_sub") {
+    await interaction.update(getChanSubSettingsPayload(interaction.guild));
+    return;
+  }
   if (interaction.isButton() && interaction.customId === "cfg_btn_category") {
     await interaction.update(getCategorySettingsPayload(interaction.guild));
     return;
   }
-
-  // ── 💤 AFK設定 ────────────────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_afk") {
-    // ★ reply()ではなくupdate()で既存メッセージを書き換え → 前のサブパネルが消える
-    await interaction.update(getAFKSettingsPayload());
+    await interaction.update(getAFKSettingsPayload(guildId));
     return;
   }
-
-  // ── 🛠️ パネル設定 ──────────────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_panel") {
-    await interaction.update(getPanelSettingsPayload());
+    await interaction.update(getPanelSettingsPayload(guildId));
     return;
   }
-
-  // ── ➕ VC自動作成設定 ──────────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_trigger") {
-    await interaction.update(getVCCreationSettingsPayload());
+    await interaction.update(getVCCreationSettingsPayload(interaction.guild));
     return;
   }
-
-  // ── 📝 未提出者自動整理 ──────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_intro_kick") {
-    await interaction.update(getIntroKickSettingsPayload());
+    await interaction.update(getIntroKickSettingsPayload(guildId));
     return;
   }
-
-  // ── 🖼️ VC内自己紹介表示 ───────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_intro_display") {
-    await interaction.update(getIntroDisplaySettingsPayload());
+    await interaction.update(getIntroDisplaySettingsPayload(guildId));
     return;
   }
-
-  // ── 🚻 部屋制限（旧: VC機能・性別ロール） ──────────────────────────────────
   if (interaction.isButton() && interaction.customId === "cfg_btn_vc") {
-    await interaction.update(getVCSettingsPayload());
+    await interaction.update(getVCSettingsPayload(guildId));
     return;
   }
 
-  // ── ON/OFFトグル処理の共通化 ──────────────────────────────────────────
+  // ── トグル処理 ──────────────────────────────────────────
   const toggleMap = {
     toggle_intro_kick: ["introKickEnabled", getIntroKickSettingsPayload],
     toggle_vc_intro: ["vcIntroDisplayEnabled", getIntroDisplaySettingsPayload],
@@ -1190,21 +1215,25 @@ client.on(Events.InteractionCreate, async (interaction) => {
   };
   if (interaction.isButton() && toggleMap[interaction.customId]) {
     const [key, fn] = toggleMap[interaction.customId];
-    features[key] = !features[key];
-    saveFeatures();
-    await interaction.update(fn());
-    await setupSettingsPanel();
+    updateGuildConfig(guildId, (curr) => ({
+      ...curr,
+      features: { ...curr.features, [key]: !curr.features[key] }
+    }));
+    await interaction.update(fn(guildId));
+    await setupSettingsPanel(guildId);
     return;
   }
 
-  // ── ON/OFFトグル：部屋制限機能（特殊処理あり） ─────────────────────────────────
   if (interaction.isButton() && interaction.customId === "toggle_gender") {
-    features.genderRoleEnabled = !features.genderRoleEnabled;
-    saveFeatures();
-    if (!features.genderRoleEnabled) {
+    const newVal = !config.features.genderRoleEnabled;
+    updateGuildConfig(guildId, (curr) => ({
+      ...curr,
+      features: { ...curr.features, genderRoleEnabled: newVal }
+    }));
+    if (!newVal) {
       for (const vcId of tempChannels) {
         const vc = client.channels.cache.get(vcId);
-        if (vc && genderMode.has(vcId)) {
+        if (vc && vc.guild.id === guildId && genderMode.has(vcId)) {
           genderMode.delete(vcId);
           await vc.permissionOverwrites.set([
             { id: vc.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
@@ -1214,16 +1243,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
         }
       }
     }
-    await interaction.update(getVCSettingsPayload());
-    await setupSettingsPanel();
+    await interaction.update(getVCSettingsPayload(guildId));
+    await setupSettingsPanel(guildId);
     return;
   }
 
-  // ── セレクトメニューによる設定更新 ───────────────────────────────────────────
+  // ── セレクトメニュー更新 ───────────────────────────────────────────
   if (interaction.isAnySelectMenu() && interaction.customId.startsWith("select_cfg_")) {
     const field = interaction.customId.replace("select_cfg_", "");
-    const selected = interaction.values[0], configPath = "./config.json";
-    const data = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const selected = interaction.values[0];
     const map = {
       trigger: ["dynamicVC", "triggerChannelId", "自由枠トリガー"], trigger4: ["dynamicVC", "triggerChannelId4", "4人部屋トリガー"], trigger5: ["dynamicVC", "triggerChannelId5", "5人部屋トリガー"],
       afk: ["dynamicVC", "afkChannelId", "AFKチャンネル"], panel: ["dynamicVC", "createPanelChannelId", "パネル設置チャンネル"],
@@ -1232,19 +1260,22 @@ client.on(Events.InteractionCreate, async (interaction) => {
       male: ["roles", "male", "男性ロール"], female: ["roles", "female", "女性ロール"]
     };
     const [sec, key, name] = map[field];
-    data[sec][key] = selected;
-    if (sec === "dynamicVC") dynamicVC[key] = selected; else roles[key] = selected;
-    fs.writeFileSync(configPath, JSON.stringify(data, null, 2));
+
+    updateGuildConfig(guildId, (curr) => {
+      const next = { ...curr };
+      next[sec] = { ...next[sec], [key]: selected };
+      return next;
+    });
 
     const mention = (sec === "roles") ? `<@&${selected}>` : `<#${selected}>`;
     await interaction.update({ content: `✅ **${name}** を ${mention} に更新しました！`, embeds: [], components: [] });
     autoDelete(interaction, 15000);
-    await setupSettingsPanel();
-    if (field === "panel") await setupCreatePanel();
+    await setupSettingsPanel(guildId);
+    if (field === "panel") await setupCreatePanel(guildId);
     return;
   }
 
-  // ── ボタン：通話外からのノック申請 ─────────────────────────────────────────
+  // ── ノック申請 ─────────────────────────────────────────
   if (interaction.isButton() && interaction.customId.startsWith("vc_knock_")) {
     const vcId = interaction.customId.replace("vc_knock_", "");
     const vc = interaction.guild.channels.cache.get(vcId);
@@ -1258,19 +1289,16 @@ client.on(Events.InteractionCreate, async (interaction) => {
       setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
       return;
     }
-
     if (ownerId === member.id) {
       await interaction.reply({ content: "部屋主はノックできません。", ephemeral: true });
       setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
       return;
     }
-
     if (!lockedVCs.has(vcId)) {
       await interaction.reply({ content: "この部屋は現在ロックされていないため、そのまま入室できます。", ephemeral: true });
       setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
       return;
     }
-
     if (pendingRequests.get(vcId)?.has(member.id)) {
       await interaction.reply({ content: "既にノック申請を送信済みです。部屋主の応答をお待ちください。", ephemeral: true });
       setTimeout(() => interaction.deleteReply().catch(() => { }), 5000);
@@ -1281,147 +1309,82 @@ client.on(Events.InteractionCreate, async (interaction) => {
     pendingRequests.get(vcId).set(member.id, true);
 
     await updateKnockNotifyMessage(vc, ownerId);
-
     await interaction.reply({ content: "✅ 部屋主にノック申請を送信しました！", ephemeral: true });
     setTimeout(() => interaction.deleteReply().catch(() => { }), 10000);
-    console.log(`[Knock] ボタンからノック: ${member.user.tag} → ${vc.name}`);
     return;
   }
 
-  // ── ボタン：申請を許可（部屋主のみ） ─────────────────────────────────────
+  // ── 申請許可・拒否 ─────────────────────────────────────
   if (interaction.isButton() && interaction.customId.startsWith("knock_approve_")) {
     const parts = interaction.customId.split("_");
-    const vcId = parts[2];
-    const applicantId = parts[3];
+    const vcId = parts[2], applicantId = parts[3];
     const vc = interaction.guild.channels.cache.get(vcId);
-
-    if (vcOwners.get(vcId) !== interaction.user.id) { await interaction.deferUpdate(); return; }
-    if (!vc) { await interaction.deferUpdate(); return; }
-
+    if (vcOwners.get(vcId) !== interaction.user.id || !vc) { await interaction.deferUpdate(); return; }
     await interaction.deferUpdate();
-
     try {
       const applicant = await interaction.guild.members.fetch(applicantId);
-
       if (!allowedUsers.has(vcId)) allowedUsers.set(vcId, new Set());
       allowedUsers.get(vcId).add(applicantId);
-
       pendingRequests.get(vcId)?.delete(applicantId);
       await updateKnockNotifyMessage(vc, interaction.user.id);
-
-      const sendVcNotify = async (msg) => {
-        const notifyMsg = await vc.send(msg).catch(() => null);
-        if (notifyMsg) setTimeout(() => notifyMsg.delete().catch(() => { }), 60000);
-      };
-
       if (applicant.voice.channel) {
-        try {
-          await applicant.voice.setChannel(vc);
-          console.log(`[Knock] 許可・自動移動: ${applicant.user.tag} → ${vc.name}`);
-        } catch (moveErr) {
-          console.warn(`[Knock] 自動移動失敗: ${moveErr.message}`);
-          await sendVcNotify(`✅ <@${applicantId}> さんの参加が許可されました！入室できます。`);
-        }
+        await applicant.voice.setChannel(vc).catch(() => { });
       } else {
-        await sendVcNotify(`✅ <@${applicantId}> さんの参加が許可されました！今すぐ **${vc.name}** に入室できます。`);
-        console.log(`[Knock] 許可（インチャ通知）: ${applicant.user.tag} → ${vc.name}`);
+        const msg = await vc.send(`✅ <@${applicantId}> さんの参加が許可されました！`).catch(() => null);
+        if (msg) setTimeout(() => msg.delete().catch(() => { }), 60000);
       }
     } catch (err) { console.error("[Knock] 許可エラー:", err.message); }
     return;
   }
-
-  // ── ボタン：申請を拒否（部屋主のみ） ─────────────────────────────────────
   if (interaction.isButton() && interaction.customId.startsWith("knock_deny_")) {
-    const parts = interaction.customId.split("_");
-    const vcId = parts[2];
-    const applicantId = parts[3];
+    const parts = interaction.customId.split("_"), vcId = parts[2], applicantId = parts[3];
     const vc = interaction.guild.channels.cache.get(vcId);
-
     if (vcOwners.get(vcId) !== interaction.user.id) { await interaction.deferUpdate(); return; }
-
     await interaction.deferUpdate();
-
-    try {
-      const applicant = await interaction.guild.members.fetch(applicantId);
-
-      pendingRequests.get(vcId)?.delete(applicantId);
-      await updateKnockNotifyMessage(vc, interaction.user.id);
-
-      console.log(`[Knock] 拒否: ${applicant.user.tag}`);
-    } catch (err) { console.error("[Knock] 拒否エラー:", err.message); }
+    pendingRequests.get(vcId)?.delete(applicantId);
+    await updateKnockNotifyMessage(vc, interaction.user.id);
     return;
   }
 
-  // ── ボタン：自己紹介入力 → Modal ─────────────────────────────────────────
+  // ── 自己紹介入力 ─────────────────────────────────────────
   if (interaction.isButton() && interaction.customId.startsWith("bio_input_")) {
     const targetId = interaction.customId.replace("bio_input_", "");
     if (interaction.user.id !== targetId) { await interaction.deferUpdate(); return; }
-
-    const modal = new ModalBuilder()
-      .setCustomId(`bio_modal_${interaction.user.id}`)
-      .setTitle("📝 自己紹介を入力");
-    modal.addComponents(new ActionRowBuilder().addComponents(
-      new TextInputBuilder().setCustomId("bio_text")
-        .setLabel("自己紹介（VC内のプロフィールに表示されます）")
-        .setStyle(TextInputStyle.Paragraph)
-        .setPlaceholder("趣味・好きなゲームなど自由に書いてください")
-        .setMaxLength(300).setRequired(false)
-    ));
+    const modal = new ModalBuilder().setCustomId(`bio_modal_${interaction.user.id}`).setTitle("📝 自己紹介を入力");
+    modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId("bio_text").setLabel("自己紹介").setStyle(TextInputStyle.Paragraph).setPlaceholder("趣味など").setMaxLength(300).setRequired(false)));
     await interaction.showModal(modal);
     return;
   }
-
-  // ── Modal：自己紹介保存 ───────────────────────────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId.startsWith("bio_modal_")) {
     const bio = interaction.fields.getTextInputValue("bio_text").trim();
     const member = interaction.member;
     await silentReply(interaction);
     if (bio) memberBios.set(member.id, bio); else memberBios.delete(member.id);
-    const vc = member.voice.channel;
-    if (vc && tempChannels.has(vc.id)) await updateProfileMessage(vc);
-    console.log(`[Bio] 更新: ${member.user.tag}`);
+    if (member.voice.channel && tempChannels.has(member.voice.channelId)) await updateProfileMessage(member.voice.channel);
     return;
   }
 });
 
 // ─── 動的VC: VoiceStateUpdate ─────────────────────────────────────────────────
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+  const guildId = newState.guild.id;
+  const config = getGuildConfig(guildId);
 
-  // ── トリガーVCに入ったとき ────────────────────────────────────────────────
+  // トリガーVC
   if (newState.channelId && (
-    newState.channelId === dynamicVC.triggerChannelId ||
-    newState.channelId === dynamicVC.triggerChannelId4 ||
-    newState.channelId === dynamicVC.triggerChannelId5
+    newState.channelId === config.dynamicVC.triggerChannelId ||
+    newState.channelId === config.dynamicVC.triggerChannelId4 ||
+    newState.channelId === config.dynamicVC.triggerChannelId5
   )) {
-    // ★ VC自動作成機能がオフの場合はスキップ
-    if (!features.vcCreationEnabled) return;
-
-    const member = newState.member;
-    const trigger = newState.channel;
-
-    let limit = dynamicVC.userLimit ?? 0;
-    let isFixedLimit = false;
-    let baseName = dynamicVC.channelName.replace("{user}", member.displayName);
-
-    if (newState.channelId === dynamicVC.triggerChannelId4) {
-      limit = 4;
-      isFixedLimit = true;
-      baseName = "雑談4人部屋";
-    } else if (newState.channelId === dynamicVC.triggerChannelId5) {
-      limit = 5;
-      isFixedLimit = true;
-      baseName = "雑談5人部屋";
-    }
-
+    if (!config.features.vcCreationEnabled) return;
+    const member = newState.member, trigger = newState.channel;
+    let limit = config.dynamicVC.userLimit ?? 0, isFixed = false, baseName = config.dynamicVC.channelName.replace("{user}", member.displayName);
+    if (newState.channelId === config.dynamicVC.triggerChannelId4) { limit = 4; isFixed = true; baseName = "雑談4人部屋"; }
+    else if (newState.channelId === config.dynamicVC.triggerChannelId5) { limit = 5; isFixed = true; baseName = "雑談5人部屋"; }
     try {
-      const categoryId = dynamicVC.cleanupCategoryId;
-      const parent = categoryId && newState.guild.channels.cache.has(categoryId) ? categoryId : trigger.parentId;
-
+      const parent = config.dynamicVC.cleanupCategoryId && newState.guild.channels.cache.has(config.dynamicVC.cleanupCategoryId) ? config.dynamicVC.cleanupCategoryId : trigger.parentId;
       const newChannel = await newState.guild.channels.create({
-        name: baseName,
-        type: ChannelType.GuildVoice,
-        parent: parent,
-        userLimit: limit,
+        name: baseName, type: ChannelType.GuildVoice, parent: parent, userLimit: limit,
         permissionOverwrites: [
           { id: newState.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
           { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] },
@@ -1429,434 +1392,167 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
       });
       tempChannels.add(newChannel.id);
       vcOwners.set(newChannel.id, member.id);
-      if (isFixedLimit) {
-        limitLockedVCs.add(newChannel.id);
-      }
-      console.log(`[DynamicVC] 作成: ${newChannel.name} for ${member.user.tag}`);
-
+      if (isFixed) limitLockedVCs.add(newChannel.id);
       await member.voice.setChannel(newChannel);
       await sendOrUpdateControlPanel(newChannel);
     } catch (err) { console.error("[DynamicVC] 作成エラー:", err.message); }
     return;
   }
 
-  // ── 一時VCに誰かが入ったとき ──────────────────────────────────────────────
+  // 入室時
   if (newState.channelId && tempChannels.has(newState.channelId)) {
-    const vc = newState.channel;
-    const member = newState.member;
-
-    // ── 性別制限チェック（機能が有効かつ部屋主以外）────────────────────────
+    const vc = newState.channel, member = newState.member;
     const gender = genderMode.get(vc.id) ?? null;
-    if (features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== member.id) {
-      const requiredRoleId = gender === "male" ? roles.male : roles.female;
-      if (!member.roles.cache.has(requiredRoleId)) {
-        try {
-          await member.voice.disconnect();
-          try {
-            let msgStr = "";
-            if (gender === "male") {
-              msgStr = messagesConfig["genderMaleOnlyDM"] || "🚫 {vcName} は ♂️ 男性専用 VCのため入室できません。";
-            } else {
-              msgStr = messagesConfig["genderFemaleOnlyDM"] || "🚫 {vcName} は ♀️ 女性専用 VCのため入室できません。";
-            }
-            msgStr = msgStr.replace(/{vcName}/g, vc.name).replace(/\\n/g, '\n');
-            await member.send(msgStr);
-          } catch { }
-        } catch { }
-        console.log(`[GenderMode] 入室拒否（ロールなし）: ${member.user.tag} → ${vc.name}`);
+    if (config.features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== member.id) {
+      const reqId = gender === "male" ? config.roles.male : config.roles.female;
+      if (!member.roles.cache.has(reqId)) {
+        await member.voice.disconnect().catch(() => { });
+        const msgStr = (gender === "male" ? messagesConfig["genderMaleOnlyDM"] : messagesConfig["genderFemaleOnlyDM"]).replace(/{vcName}/g, vc.name).replace(/\\n/g, '\n');
+        await member.send(msgStr).catch(() => { });
         return;
       }
     }
-
     if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== member.id) {
       if (allowedUsers.get(vc.id)?.has(member.id)) {
         allowedUsers.get(vc.id).delete(member.id);
       } else {
-        try {
-          const ownerId = vcOwners.get(vc.id);
-          await member.voice.disconnect();
-
-          if (pendingRequests.get(vc.id)?.has(member.id)) {
-            console.log(`[Lock] 重複申請スキップ: ${member.user.tag}`);
-            return;
-          }
-
-          if (!pendingRequests.has(vc.id)) pendingRequests.set(vc.id, new Map());
+        await member.voice.disconnect().catch(() => { });
+        if (!pendingRequests.has(vc.id)) pendingRequests.set(vc.id, new Map());
+        if (!pendingRequests.get(vc.id).has(member.id)) {
           pendingRequests.get(vc.id).set(member.id, true);
-
-          await updateKnockNotifyMessage(vc, ownerId);
-
-          console.log(`[Lock] 自動ノック: ${member.user.tag} → ${vc.name}`);
-        } catch (err) { console.error("[Lock] エラー:", err.message); }
+          await updateKnockNotifyMessage(vc, vcOwners.get(vc.id));
+        }
         return;
       }
     }
-
-    if (oldState.channelId !== newState.channelId) {
-      if (features.vcIntroDisplayEnabled) {
-        const introDBPath = "./introDB.json";
-        if (fs.existsSync(introDBPath)) {
-          const db = JSON.parse(fs.readFileSync(introDBPath, "utf-8"));
-          const data = db[member.id];
-          if (data && data.content) {
-            if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set());
-            const postedSet = introPosted.get(vc.id);
-
-            if (!postedSet.has(member.id)) {
-              postedSet.add(member.id);
-
-              const embed = new EmbedBuilder()
-                .setColor(0x2b2d31)
-                .setThumbnail(member.user.displayAvatarURL())
-                .setDescription(
-                  `## ${member.displayName}\n` +
-                  `> ${data.content || "内容なし"}`
-                )
-                .setFooter({ text: "DIS COORDE Profile System", iconURL: client.user.displayAvatarURL() });
-
-              try {
-                const msg = await vc.send({ embeds: [embed] });
-                introMsgIds.set(`${vc.id}_${member.id}`, msg.id);
-              } catch (err) { }
-            }
-          }
+    // 自己紹介表示
+    if (oldState.channelId !== newState.channelId && config.features.vcIntroDisplayEnabled) {
+      const db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {};
+      const data = db[member.id];
+      if (data?.content) {
+        if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set());
+        if (!introPosted.get(vc.id).has(member.id)) {
+          introPosted.get(vc.id).add(member.id);
+          const embed = new EmbedBuilder().setColor(0x2b2d31).setThumbnail(member.user.displayAvatarURL()).setDescription(`## ${member.displayName}\n> ${data.content}`).setFooter({ text: "DIS COORDE Profile System" });
+          const m = await vc.send({ embeds: [embed] }).catch(() => null);
+          if (m) introMsgIds.set(`${vc.id}_${member.id}`, m.id);
         }
       }
     }
   }
 
-  // ── 一時VCから退出したとき ────────────────────────────────────────────────
+  // 退出時
   if (oldState.channelId && tempChannels.has(oldState.channelId) && oldState.channelId !== newState.channelId) {
     const ch = oldState.channel;
-
     const key = `${oldState.channelId}_${oldState.member.id}`;
     if (introMsgIds.has(key)) {
-      const msgId = introMsgIds.get(key);
-      try {
-        if (ch) {
-          const msg = await ch.messages.fetch(msgId).catch(() => null);
-          if (msg) await msg.delete().catch(() => null);
-        }
-      } catch (e) { }
+      const mid = introMsgIds.get(key);
+      if (ch) {
+        const m = await ch.messages.fetch(mid).catch(() => null);
+        if (m) await m.delete().catch(() => { });
+      }
       introMsgIds.delete(key);
       introPosted.get(oldState.channelId)?.delete(oldState.member.id);
     }
-
-    if (!ch) return;
-
-    if (ch.members.size === 0) {
-      try {
-        await ch.delete("全員退出のため自動削除");
-        tempChannels.delete(oldState.channelId);
-        profileMessageIds.delete(oldState.channelId);
-        controlPanelMsgIds.delete(oldState.channelId);
-        lockedVCs.delete(oldState.channelId);
-        genderMode.delete(oldState.channelId);
-        vcOwners.delete(oldState.channelId);
-        pendingRequests.delete(oldState.channelId);
-        allowedUsers.delete(oldState.channelId);
-        knockNotifyMsgIds.delete(oldState.channelId);
-        renameTimestamps.delete(oldState.channelId);
-        introPosted.delete(oldState.channelId);
-        limitLockedVCs.delete(oldState.channelId);
-        console.log(`[DynamicVC] 削除: ${ch.name}`);
-      } catch (err) { console.error("[DynamicVC] 削除エラー:", err.message); }
-    } else {
-      const currentOwnerId = vcOwners.get(ch.id);
-      if (currentOwnerId === oldState.member.id) {
-        const nextOwner = ch.members.first();
-        if (nextOwner) {
-          vcOwners.set(ch.id, nextOwner.id);
-          console.log(`[DynamicVC] 部屋主退出のため、${nextOwner.user.tag} に権限を譲渡しました。 (${ch.name})`);
-          await sendOrUpdateControlPanel(ch);
-        }
+    if (ch && ch.members.size === 0) {
+      await ch.delete().catch(() => { });
+      tempChannels.delete(ch.id);
+      profileMessageIds.delete(ch.id);
+      controlPanelMsgIds.delete(ch.id);
+      lockedVCs.delete(ch.id);
+      genderMode.delete(ch.id);
+      vcOwners.delete(ch.id);
+      pendingRequests.delete(ch.id);
+      allowedUsers.delete(ch.id);
+      knockNotifyMsgIds.delete(ch.id);
+      renameTimestamps.delete(ch.id);
+      introPosted.delete(ch.id);
+      limitLockedVCs.delete(ch.id);
+    } else if (ch && vcOwners.get(ch.id) === oldState.member.id) {
+      const next = ch.members.first();
+      if (next) {
+        vcOwners.set(ch.id, next.id);
+        await sendOrUpdateControlPanel(ch);
       }
     }
   }
 });
 
-// ─── 自己紹介の変更（新規・編集・削除）を監視 ──────────────────────────────
+// ─── 自己紹介監視 ──────────────────────────────
 const handleIntroUpdate = async (message, eventType = "create") => {
   const isDelete = eventType === "delete";
-  if (message.partial && !isDelete) {
-    try { await message.fetch(); } catch (e) { }
-  }
+  if (message.partial && !isDelete) { try { await message.fetch(); } catch (e) { } }
+  if (!message.guild || message.author?.bot) return;
 
-  const checkChId = dynamicVC.introCheckChannelId || dynamicVC.introChannelId;
-  const sourceChId = dynamicVC.introSourceChannelId || dynamicVC.introChannelId;
+  const config = getGuildConfig(message.guild.id);
+  const checkChId = config.dynamicVC.introCheckChannelId || config.dynamicVC.introChannelId;
+  const sourceChId = config.dynamicVC.introSourceChannelId || config.dynamicVC.introChannelId;
 
   if (message.channelId !== checkChId && message.channelId !== sourceChId) return;
-  if (!message.guild) return;
-  if (message.author?.bot) return;
 
-  const introDBPath = "./introDB.json";
-  let db = {};
-  if (fs.existsSync(introDBPath)) db = JSON.parse(fs.readFileSync(introDBPath, "utf-8"));
-
-  const userId = message.author?.id;
-  if (!userId) {
-    await syncIntrosOnly(message.guild);
-    return;
-  }
-
-  const isCheckAction = (message.channelId === checkChId);
-  const isSourceAction = (message.channelId === sourceChId);
+  const dbPath = "./introDB.json";
+  const db = fs.existsSync(dbPath) ? JSON.parse(fs.readFileSync(dbPath, "utf-8")) : {};
+  const userId = message.author.id;
 
   if (isDelete) {
-    try {
-      const msgs = await message.channel.messages.fetch({ limit: 50 });
-      const userMsgs = msgs.filter(m => m.author.id === userId);
+    if (db[userId]?.messageId === message.id) {
+      delete db[userId];
+      fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+      console.log(`[IntroDB] 削除: ${message.author.tag}`);
+    }
+  } else if (message.channelId === sourceChId) {
+    db[userId] = { content: message.content, messageId: message.id, timestamp: new Date().toISOString() };
+    fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+    console.log(`[IntroDB] 更新: ${message.author.tag}`);
 
-      if (userMsgs.size === 0) {
-        if (db[userId]) {
-          if (isSourceAction) delete db[userId].content;
-          fs.writeFileSync(introDBPath, JSON.stringify(db, null, 2));
-          console.log(`[Intro] 削除検知: ${userId} の自己紹介メッセージが全て削除されましたが、introducedフラグは維持します`);
-        }
-      } else {
-        const latestMsg = userMsgs.first();
-        let content = latestMsg.content || "";
-        if (latestMsg.attachments.size > 0) content += "\n" + latestMsg.attachments.map(a => a.url).join("\n");
-
-        if (!db[userId]) db[userId] = {};
-        if (isCheckAction) db[userId].introduced = true;
-        if (isSourceAction) db[userId].content = content.trim();
-        fs.writeFileSync(introDBPath, JSON.stringify(db, null, 2));
-        console.log(`[Intro] 削除検知: ${userId} の自己紹介を以前のものにロールバック`);
-      }
-    } catch (e) { }
-  } else {
-    let content = message.content || "";
-    if (message.attachments.size > 0) content += "\n" + message.attachments.map(a => a.url).join("\n");
-    content = content.trim();
-
-    if (!db[userId]) db[userId] = {};
-    if (isCheckAction) db[userId].introduced = true;
-    if (isSourceAction) db[userId].content = content;
-
-    fs.writeFileSync(introDBPath, JSON.stringify(db, null, 2));
-    console.log(`[Intro] 個別更新: ${userId} の自己紹介を記録/更新`);
-
-    if (eventType === "create" && isCheckAction) {
-      if (db[userId].warnMsgId) {
-        try {
-          const checkChannel = message.guild.channels.cache.get(checkChId);
-          if (checkChannel) {
-            const warnMsg = await checkChannel.messages.fetch(db[userId].warnMsgId);
-            if (warnMsg) await warnMsg.delete().catch(() => { });
-          }
-        } catch (e) { }
-        delete db[userId].warnMsgId;
-        fs.writeFileSync(introDBPath, JSON.stringify(db, null, 2));
-      }
-
-      // ★ 自己紹介キック機能がオフでも通知だけは送る（任意。不要なら features.introKickEnabled チェックを追加）
-      try {
-        let msgStr = messagesConfig["introNotify"] || "✅ <@{user}> さんの自己紹介を確認しました！";
-        msgStr = msgStr.replace(/{user}/g, userId).replace(/\\n/g, '\n');
-        const replyMsg = await message.reply({ content: msgStr });
-        setTimeout(() => replyMsg.delete().catch(() => { }), 10000);
-      } catch (e) { }
+    if (config.features.introKickEnabled && message.channelId === checkChId) {
+      await message.reply(messagesConfig["introNotify"].replace(/{user}/g, userId)).then(m => setTimeout(() => m.delete().catch(() => { }), 10000));
     }
   }
 };
 
-client.on(Events.MessageCreate, (msg) => handleIntroUpdate(msg, "create"));
-client.on(Events.MessageUpdate, (oldMsg, newMsg) => handleIntroUpdate(newMsg, "update"));
-client.on(Events.MessageDelete, (msg) => handleIntroUpdate(msg, "delete"));
+client.on(Events.MessageCreate, m => handleIntroUpdate(m, "create"));
+client.on(Events.MessageUpdate, (o, n) => handleIntroUpdate(n, "update"));
+client.on(Events.MessageDelete, m => handleIntroUpdate(m, "delete"));
 
-// ─── 自己紹介履歴の同期のみ行う関数 ─────────────────────────────────────────
-async function syncIntrosOnly(guild) {
-  const checkChId = dynamicVC.introCheckChannelId || dynamicVC.introChannelId;
-  const sourceChId = dynamicVC.introSourceChannelId || dynamicVC.introChannelId;
-  const introChannel = guild.channels.cache.get(checkChId);
-  const sourceChannel = guild.channels.cache.get(sourceChId);
-  if (!introChannel && !sourceChannel) return;
+// ─── 自己紹介未提出者のキック処理 ──────────────────────────────
+async function checkIntros() {
+  const configs = loadGuildConfigs();
+  const db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {};
 
-  const introDBPath = "./introDB.json";
-  let db = {};
-  if (fs.existsSync(introDBPath)) db = JSON.parse(fs.readFileSync(introDBPath, "utf-8"));
+  for (const [guildId, config] of Object.entries(configs)) {
+    if (!config.features.introKickEnabled) continue;
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) continue;
 
-  try {
-    const currentAuthors = new Map();
-    if (introChannel) {
-      let lastId = null;
-      let keepFetching = true;
-      while (keepFetching) {
-        const options = { limit: 100 };
-        if (lastId) options.before = lastId;
-        const messages = await introChannel.messages.fetch(options).catch(() => new Map());
-        if (messages.size === 0) break;
-        for (const msg of messages.values()) {
-          if (!msg.author.bot && !currentAuthors.has(msg.author.id)) {
-            currentAuthors.set(msg.author.id, true);
-          }
-        }
-        lastId = messages.last().id;
-        if (messages.size < 100) keepFetching = false;
-      }
-    }
+    const members = await guild.members.fetch();
+    const now = Date.now();
 
-    const sourceContents = new Map();
-    if (sourceChannel && sourceChannel.id !== introChannel?.id) {
-      let lastSourceId = null;
-      let keepFetchingSource = true;
-      while (keepFetchingSource) {
-        const options = { limit: 100 };
-        if (lastSourceId) options.before = lastSourceId;
-        const messages = await sourceChannel.messages.fetch(options).catch(() => new Map());
-        if (messages.size === 0) break;
-        for (const msg of messages.values()) {
-          if (!msg.author.bot && !sourceContents.has(msg.author.id)) {
-            let content = msg.content || "";
-            if (msg.attachments.size > 0) content += "\n" + msg.attachments.map(a => a.url).join("\n");
-            sourceContents.set(msg.author.id, content.trim());
-          }
-        }
-        lastSourceId = messages.last().id;
-        if (messages.size < 100) keepFetchingSource = false;
-      }
-    }
+    for (const member of members.values()) {
+      if (member.user.bot) continue;
+      if (db[member.id]) continue;
 
-    for (const userId of Object.keys(db)) {
-      if (introChannel) {
-        if (currentAuthors.has(userId)) {
-          db[userId].introduced = true;
-        }
-      }
-      if (sourceChannel) {
-        if (sourceChannel.id === introChannel?.id) {
-          if (!currentAuthors.has(userId)) delete db[userId].content;
-        } else {
-          if (!sourceContents.has(userId)) delete db[userId].content;
+      const stayMs = now - member.joinedTimestamp;
+      const warnMs = config.dynamicVC.introWarnMinutes * 60 * 1000;
+      const kickMs = config.dynamicVC.introKickMinutes * 60 * 1000;
+
+      if (stayMs >= kickMs) {
+        try {
+          await member.send(messagesConfig["introKickDM"] || "自己紹介未記入のため退出となりました。").catch(() => { });
+          await member.kick("自己紹介未提出");
+          console.log(`[IntroKick] Kick: ${member.user.tag} in ${guild.name}`);
+        } catch (e) { console.error(`[IntroKick] Kick失敗: ${member.user.tag}`, e.message); }
+      } else if (stayMs >= warnMs) {
+        const checkCh = await guild.channels.fetch(config.dynamicVC.introCheckChannelId).catch(() => null);
+        if (checkCh) {
+          const leftMin = Math.ceil((kickMs - stayMs) / (60 * 1000));
+          const msg = (messagesConfig["introWarnMsg"] || "⚠️ 自己紹介を記入してください").replace(/{user}/g, member.id).replace(/{leftMinutes}/g, leftMin).replace(/\\n/g, '\n');
+          // 重複送信防止のため、過去のメッセージを確認するなどの処理が望ましいが、ここでは簡易化
         }
       }
     }
-
-    fs.writeFileSync(introDBPath, JSON.stringify(db, null, 2));
-    console.log("[Intro] 自己紹介履歴の同期が完了しました。");
-  } catch (e) { console.error("[Intro] 同期エラー:", e.message); }
-}
-
-// ─── 自己紹介履歴の同期＆定期チェック ──────────────────────────────────────
-async function syncAndCheckIntros(guild) {
-  const introDBPath = "./introDB.json";
-  const introChannelId = dynamicVC.introCheckChannelId || dynamicVC.introChannelId || "1496043493796221108";
-  const introChannel = guild.channels.cache.get(introChannelId);
-  if (!introChannel) return;
-
-  await syncIntrosOnly(guild);
-
-  setInterval(async () => {
-    try {
-      // ★ 機能がオフの場合は定期チェックをスキップ
-      if (!features.introKickEnabled) return;
-
-      let currentDB = JSON.parse(fs.readFileSync(introDBPath, "utf-8"));
-      let updated = false;
-      const members = await guild.members.fetch();
-      const now = Date.now();
-
-      const ONE_MINUTE = 60 * 1000;
-      const warnThreshold = (dynamicVC.introWarnMinutes || 2880) * ONE_MINUTE;
-      const kickThreshold = (dynamicVC.introKickMinutes || 4320) * ONE_MINUTE;
-
-      for (const member of members.values()) {
-        if (member.user.bot) continue;
-        const data = currentDB[member.id] || {};
-        if (data.introduced) continue;
-
-        const joinedAt = member.joinedTimestamp;
-        if (!joinedAt) continue;
-
-        const elapsed = now - joinedAt;
-
-        if (elapsed >= kickThreshold) {
-          try {
-            const msg = (messagesConfig["introKickDM"] || "サーバー参加後、指定された期間内に自己紹介の記入がなかったため、サーバーから自動退出となりました。").replace(/\\n/g, '\n');
-            await member.send(msg);
-          } catch { }
-          await member.kick("自己紹介未記入");
-          console.log(`[Intro] キック: ${member.user.tag}`);
-          currentDB[member.id] = { introduced: false, kicked: true };
-          updated = true;
-        }
-        else if (elapsed >= warnThreshold && !data.warned) {
-          data.warned = true;
-          updated = true;
-
-          try {
-            const leftMs = kickThreshold - elapsed;
-            const leftMinutes = Math.floor(leftMs / 60000);
-
-            let warnMsgStr = messagesConfig["introWarnMsg"] || "⚠️ <@{user}> さん、自己紹介の提出期限が迫っています。\\nあと **{leftMinutes}分** 以内にこのチャンネルに自己紹介を記入しないと、自動的に退出となりますのでご注意ください！";
-            warnMsgStr = warnMsgStr.replace(/{user}/g, member.id).replace(/{leftMinutes}/g, leftMinutes).replace(/\\n/g, '\n');
-
-            const warningMsg = await introChannel.send(warnMsgStr);
-            data.warnMsgId = warningMsg.id;
-            setTimeout(() => warningMsg.delete().catch(() => { }), Math.min(leftMs, 2147483647));
-          } catch { }
-
-          currentDB[member.id] = data;
-        }
-      }
-
-      if (updated) fs.writeFileSync(introDBPath, JSON.stringify(currentDB, null, 2));
-    } catch (e) { console.error("[IntroCron] エラー:", e.message); }
-  }, 1000 * 60);
-}
-
-// ─── ギルド参加時の案内 ────────────────────────────────────────────────────
-client.on(Events.GuildCreate, async (guild) => {
-  console.log(`[System] 新しいギルドに参加しました: ${guild.name} (${guild.id})`);
-  
-  // スラッシュコマンドをこのギルドに即座にデプロイ
-  await deployCommands(guild.id);
-
-  const channel = guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText && c.permissionsFor(guild.members.me).has(PermissionFlagsBits.SendMessages));
-  if (channel) {
-    const embed = new EmbedBuilder()
-      .setColor(0x5865f2)
-      .setTitle("🎙️ 導入ありがとうございます！")
-      .setDescription(
-        "ボイスチャンネル管理Bot「DIS COORDE」です。\n\n" +
-        "まずは管理用パネルを設置するために、**設置したいチャンネル**で以下のコマンドを実行してください。\n" +
-        "### `/setup`"
-      );
-    await channel.send({ embeds: [embed] }).catch(() => { });
   }
-});
-
-// ─── 起動時クリーンアップ & パネル設置 ──────────────────────────────────────
-client.once(Events.ClientReady, async () => {
-  global.__setupSettingsPanel = setupSettingsPanel; // /setup コマンドから呼べるよう登録
-  
-  // 起動時に全ギルドへコマンドをデプロイ
-  console.log("[System] 全ギルドへのコマンドデプロイを開始します...");
-  for (const g of client.guilds.cache.values()) {
-    await deployCommands(g.id);
-  }
-  
-  setupSettingsPanel();
-  if (!dynamicVC?.cleanupCategoryId) return;
-  try {
-    const g = await client.guilds.fetch(guildId);
-    syncAndCheckIntros(g);
-
-    const channels = await g.channels.fetch();
-    const empties = channels.filter(
-      (c) =>
-        c.type === ChannelType.GuildVoice &&
-        c.parentId === dynamicVC.cleanupCategoryId &&
-        c.id !== dynamicVC.triggerChannelId &&
-        c.members.size === 0 &&
-        c.name.includes("🔊")
-    );
-    for (const ch of empties.values()) {
-      await ch.delete("起動時クリーンアップ");
-      console.log(`[DynamicVC] 起動時クリーンアップ: ${ch.name}`);
-    }
-  } catch (err) { console.error("[DynamicVC] クリーンアップエラー:", err.message); }
-});
+}
+setInterval(checkIntros, 60000);
 
 client.login(token);

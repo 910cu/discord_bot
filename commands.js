@@ -381,18 +381,22 @@ const setupCommand = {
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    // index.js 側の setupSettingsPanel を呼ぶためにイベントを発火
-    // チャンネルIDを config.json に保存して setupSettingsPanel を再実行
     const fs = require("fs");
-    const configPath = "./config.json";
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    config.settingsChannelId = interaction.channelId;
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+    const GUILD_CONFIGS_PATH = "./guildConfigs.json";
+    const guildId = interaction.guildId;
+
+    let configs = {};
+    if (fs.existsSync(GUILD_CONFIGS_PATH)) {
+      configs = JSON.parse(fs.readFileSync(GUILD_CONFIGS_PATH, "utf-8"));
+    }
+
+    if (!configs[guildId]) configs[guildId] = {};
+    configs[guildId].settingsChannelId = interaction.channelId;
+
+    fs.writeFileSync(GUILD_CONFIGS_PATH, JSON.stringify(configs, null, 2));
 
     await interaction.reply({ content: "✅ このチャンネルを設定チャンネルとして登録しました。パネルを設置します…", ephemeral: true });
 
-    // index.js でエクスポートされた setupSettingsPanel を呼ぶ
-    // （グローバルに登録しておく方式）
     if (typeof global.__setupSettingsPanel === "function") {
       await global.__setupSettingsPanel(interaction.channelId);
     }
