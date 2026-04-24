@@ -67,7 +67,7 @@ function loadMessages() {
 }
 loadMessages();
 
-const tempChannels = new Set(), profileMessageIds = new Map(), controlPanelMsgIds = new Map(), memberBios = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), renameTimestamps = new Map(), profileUpdateQueue = new Map();
+const tempChannels = new Set(), controlPanelMsgIds = new Map(), memberBios = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), renameTimestamps = new Map();
 
 const canRename = (vcId) => {
   const now = Date.now(), stamps = (renameTimestamps.get(vcId) || []).filter(t => now - t < 600000);
@@ -212,40 +212,7 @@ async function setupCreatePanel() {
   } catch (err) { console.error(err.message); }
 }
 
-function buildProfileEmbed(member) {
-  const bio = memberBios.get(member.id) ?? null;
-  const embed = new EmbedBuilder().setColor(member.displayColor || 0x5865f2).setAuthor({ name: member.displayName, iconURL: member.user.displayAvatarURL({ size: 64 }) }).setThumbnail(member.user.displayAvatarURL({ size: 256 })).addFields({ name: "📅 参加日", value: member.joinedAt ? `<t:${Math.floor(member.joinedAt.getTime() / 1000)}:D>` : "不明", inline: true }, { name: "🏷️ ロール", value: member.roles.cache.filter(r => r.id !== member.guild.id).sort((a, b) => b.position - a.position).map(r => `<@&${r.id}>`).join(" ") || "なし", inline: false });
-  if (bio) embed.addFields({ name: "📝 自己紹介", value: bio, inline: false });
-  return embed;
-}
-
-async function updateProfileMessage(vc) {
-  if (!vc) return;
-  if (profileUpdateQueue.get(vc.id)) return profileUpdateQueue.get(vc.id).then(() => updateProfileMessage(vc));
-
-  const updatePromise = (async () => {
-    const members = [...vc.members.values()], msgId = profileMessageIds.get(vc.id);
-    if (members.length === 0) {
-      if (msgId) try { await (await vc.messages.fetch(msgId)).delete(); } catch { }
-      profileMessageIds.delete(vc.id);
-      return;
-    }
-    const payload = { embeds: members.map(buildProfileEmbed) };
-    try {
-      if (msgId) {
-        try { await (await vc.messages.fetch(msgId)).edit(payload); }
-        catch { const s = await vc.send(payload); profileMessageIds.set(vc.id, s.id); }
-      } else {
-        const s = await vc.send(payload);
-        profileMessageIds.set(vc.id, s.id);
-      }
-    } catch { }
-  })();
-
-  profileUpdateQueue.set(vc.id, updatePromise);
-  await updatePromise;
-  profileUpdateQueue.delete(vc.id);
-}
+// Profile message functions removed as requested
 
 function buildPanelPayload(vc) {
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, limit = vc.userLimit ?? 0, ownerId = vcOwners.get(vc.id), isFixed = limitLockedVCs.has(vc.id);
@@ -355,7 +322,7 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("rename_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("rename_modal_", "")); await silentReply(i); if (vc) await updateVcName(vc, i.fields.getTextInputValue("name").trim()); }
     if (cid === "intro_time_modal") { const w = parseInt(i.fields.getTextInputValue("warn")), k = parseInt(i.fields.getTextInputValue("kick")); if (!isNaN(w) && !isNaN(k)) { dynamicVC.introWarnMinutes = w; dynamicVC.introKickMinutes = k; const c = JSON.parse(fs.readFileSync("./config.json", "utf-8")); c.dynamicVC.introWarnMinutes = w; c.dynamicVC.introKickMinutes = k; fs.writeFileSync("./config.json", JSON.stringify(c, null, 2)); await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(); } }
     if (cid.startsWith("msg_submit_")) { const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"]; keys.forEach(k => { messagesConfig[k] = i.fields.getTextInputValue(k).replace(/\n/g, '\\n'); }); fs.writeFileSync(msgConfigPath, JSON.stringify(messagesConfig, null, 2)); return i.reply({ content: "✅ 更新完了", ephemeral: true }); }
-    if (cid.startsWith("bio_modal_")) { const bio = i.fields.getTextInputValue("bio").trim(); await silentReply(i); if (bio) memberBios.set(i.user.id, bio); else memberBios.delete(i.user.id); if (i.member.voice.channel) updateProfileMessage(i.member.voice.channel); }
+    if (cid.startsWith("bio_modal_")) { const bio = i.fields.getTextInputValue("bio").trim(); await silentReply(i); if (bio) memberBios.set(i.user.id, bio); else memberBios.delete(i.user.id); }
   }
 
   if (i.isAnySelectMenu() && i.customId.startsWith("select_cfg_")) {
@@ -383,13 +350,11 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     if (features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== m.id && !m.roles.cache.has(roles[gender])) { try { await m.voice.disconnect(); m.send((messagesConfig[gender === 'male' ? 'genderMaleOnlyDM' : 'genderFemaleOnlyDM'] || "").replace(/{vcName}/g, vc.name).replace(/\\n/g, '\n')).catch(() => { }); } catch { } return; }
     if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== m.id && !allowedUsers.get(vc.id)?.has(m.id)) { try { await m.voice.disconnect(); if (!pendingRequests.has(vc.id)) pendingRequests.set(vc.id, new Map()); pendingRequests.get(vc.id).set(m.id, true); await updateKnockNotifyMessage(vc, vcOwners.get(vc.id)); } catch { } return; }
     if (o.channelId !== n.channelId && features.vcIntroDisplayEnabled) { const db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {}; if (db[m.id]?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x2b2d31).setThumbnail(m.user.displayAvatarURL()).setDescription(`## ${m.displayName}\n> ${db[m.id].content}`).setFooter({ text: "DIS COORDE Profile System" })] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } } }
-    updateProfileMessage(vc);
   }
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
-    if (ch?.members.size === 0) { try { await ch.delete();[tempChannels, profileMessageIds, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs].forEach(s => s.delete(o.channelId)); } catch { } }
+    if (ch?.members.size === 0) { try { await ch.delete();[tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs].forEach(s => s.delete(o.channelId)); } catch { } }
     else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = ch.members.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch); } }
-    if (ch) updateProfileMessage(ch);
   }
 });
 
