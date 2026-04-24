@@ -391,16 +391,22 @@ const handleIntroUpdate = async (msg, type = "create") => {
 
 client.on(Events.MessageCreate, async m => {
   if (m.author.bot) return;
+  if (m.guild) return handleIntroUpdate(m, "create");
+
+  console.log(`[DEBUG] DM Received from ${m.author.tag} (${m.author.id})`);
   if (m.channel.type === ChannelType.DM) {
-    const guild = client.guilds.cache.get(guildId); if (!guild) return;
-    const member = await guild.members.fetch(m.author.id).catch(() => null);
-    if (!member || !member.voice.channel) return m.reply("❌ 移動するには、まずサーバーのボイスチャンネルに参加してください。");
+    const guild = client.guilds.cache.get(guildId);
+    if (!guild) { console.error("[ERROR] Guild not found in cache. guildId:", guildId); return; }
+
+    const member = await guild.members.fetch(m.author.id).catch(err => { console.error("[ERROR] Member fetch failed:", err.message); return null; });
+    if (!member || !member.voice.channel) return m.reply("❌ 移動するには、まずサーバーのボイスチャンネルに参加してください。").catch(e => console.error("[ERROR] Reply failed:", e.message));
+
     const activeVCs = [...tempChannels].map(id => guild.channels.cache.get(id)).filter(c => c && c.id !== member.voice.channelId);
-    if (activeVCs.length === 0) return m.reply("現在、移動可能な他のグループ（VC）はありません。");
+    if (activeVCs.length === 0) return m.reply("現在、移動可能な他のグループ（VC）はありません。").catch(e => console.error("[ERROR] Reply failed:", e.message));
+
     const menu = new StringSelectMenuBuilder().setCustomId("dm_move_vc").setPlaceholder("移動先のグループを選択").addOptions(activeVCs.slice(0, 25).map(c => ({ label: c.name, value: c.id, description: `現在の人数: ${c.members.size}人` })));
-    return m.reply({ content: "📂 **グループ移動**\n移動したいグループを選択してください。", components: [createRow([menu])] });
+    m.reply({ content: "📂 **グループ移動**\n移動したいグループを選択してください。", components: [createRow([menu])] }).catch(e => console.error("[ERROR] Reply failed:", e.message));
   }
-  handleIntroUpdate(m, "create");
 });
 client.on(Events.MessageUpdate, (o, n) => handleIntroUpdate(n, "update"));
 client.on(Events.MessageDelete, m => handleIntroUpdate(m, "delete"));
