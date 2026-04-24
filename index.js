@@ -104,7 +104,7 @@ function getSettingsPayload(type = "main") {
   let components = [];
 
   if (type === "main") {
-    let desc = `-# v1.0.0\n\n`;
+    let desc = `# コントロールパネル\n-# v1.0.0\n\n`;
     const sections = [
       {
         cond: features.afkEnabled || features.vcPanelEnabled, title: "基本設定", lines: [
@@ -156,7 +156,7 @@ function getSettingsPayload(type = "main") {
       });
       desc += "\n";
     });
-    embed.setTitle("⚙️ コントロールパネル").setDescription(desc);
+    embed.setTitle(null).setDescription(desc);
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK"), createBtn("cfg_btn_panel", "🛠️ パネル"), createBtn("cfg_btn_trigger", "➕ 自動作成")]),
       createRow([createBtn("cfg_btn_intro_kick", "📝 自動整理"), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示")]),
