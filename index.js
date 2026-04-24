@@ -67,7 +67,7 @@ function loadMessages() {
 }
 loadMessages();
 
-const tempChannels = new Set(), profileMessageIds = new Map(), controlPanelMsgIds = new Map(), memberBios = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), renameTimestamps = new Map();
+const tempChannels = new Set(), profileMessageIds = new Map(), controlPanelMsgIds = new Map(), memberBios = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), renameTimestamps = new Map(), profileUpdateQueue = new Map();
 
 const canRename = (vcId) => {
   const now = Date.now(), stamps = (renameTimestamps.get(vcId) || []).filter(t => now - t < 600000);
@@ -220,10 +220,31 @@ function buildProfileEmbed(member) {
 }
 
 async function updateProfileMessage(vc) {
-  const members = [...vc.members.values()], msgId = profileMessageIds.get(vc.id);
-  if (members.length === 0) { if (msgId) try { await (await vc.messages.fetch(msgId)).delete(); } catch { } profileMessageIds.delete(vc.id); return; }
-  const payload = { embeds: members.map(buildProfileEmbed) };
-  try { if (msgId) { try { await (await vc.messages.fetch(msgId)).edit(payload); } catch { const s = await vc.send(payload); profileMessageIds.set(vc.id, s.id); } } else { const s = await vc.send(payload); profileMessageIds.set(vc.id, s.id); } } catch { }
+  if (!vc) return;
+  if (profileUpdateQueue.get(vc.id)) return profileUpdateQueue.get(vc.id).then(() => updateProfileMessage(vc));
+
+  const updatePromise = (async () => {
+    const members = [...vc.members.values()], msgId = profileMessageIds.get(vc.id);
+    if (members.length === 0) {
+      if (msgId) try { await (await vc.messages.fetch(msgId)).delete(); } catch { }
+      profileMessageIds.delete(vc.id);
+      return;
+    }
+    const payload = { embeds: members.map(buildProfileEmbed) };
+    try {
+      if (msgId) {
+        try { await (await vc.messages.fetch(msgId)).edit(payload); }
+        catch { const s = await vc.send(payload); profileMessageIds.set(vc.id, s.id); }
+      } else {
+        const s = await vc.send(payload);
+        profileMessageIds.set(vc.id, s.id);
+      }
+    } catch { }
+  })();
+
+  profileUpdateQueue.set(vc.id, updatePromise);
+  await updatePromise;
+  profileUpdateQueue.delete(vc.id);
 }
 
 function buildPanelPayload(vc) {
