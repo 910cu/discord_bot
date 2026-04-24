@@ -15,14 +15,14 @@ function checkAdminChannel(interaction) {
 
 function adminChannelError(interaction) {
   return interaction.reply({
-    content: `❌ このコマンドは \`${ADMIN_CHANNEL_NAME}\` チャンネルでのみ使用できます。`,
+    content: `このコマンドは \`${ADMIN_CHANNEL_NAME}\` チャンネルでのみ使用できます。`,
     ephemeral: true,
   });
 }
 
 function resultEmbed(title, fields) {
   return new EmbedBuilder()
-    .setColor(0x5865f2)
+    .setColor(0x2b2d31)
     .setTitle(title)
     .addFields(fields)
     .setTimestamp();
@@ -58,10 +58,10 @@ const moveCommand = {
     }
 
     await interaction.reply({
-      embeds: [resultEmbed("🔀 ユーザーを移動しました", [
-        { name: "移動先", value: myVC.name, inline: true },
-        { name: "成功", value: `${moved} 人`, inline: true },
-        { name: "失敗", value: `${failed} 人`, inline: true },
+      embeds: [resultEmbed("Users Moved", [
+        { name: "Destination", value: myVC.name, inline: true },
+        { name: "Success", value: `${moved}`, inline: true },
+        { name: "Failed", value: `${failed}`, inline: true },
       ])],
       ephemeral: true,
     });
@@ -99,10 +99,10 @@ const cmoveCommand = {
     }
 
     await interaction.reply({
-      embeds: [resultEmbed("🔀 ユーザーを移動しました", [
-        { name: "移動先", value: targetVC.name, inline: true },
-        { name: "成功", value: `${moved} 人`, inline: true },
-        { name: "失敗", value: `${failed} 人`, inline: true },
+      embeds: [resultEmbed("Users Moved", [
+        { name: "Destination", value: targetVC.name, inline: true },
+        { name: "Success", value: `${moved}`, inline: true },
+        { name: "Failed", value: `${failed}`, inline: true },
       ])],
       ephemeral: true,
     });
@@ -140,12 +140,12 @@ const fmoveCommand = {
     }
 
     await interaction.editReply({
-      embeds: [resultEmbed("🔀 チャンネル間移動完了", [
-        { name: "移動元", value: fromVC.name, inline: true },
-        { name: "移動先", value: toVC.name, inline: true },
+      embeds: [resultEmbed("Channel Transfer Complete", [
+        { name: "From", value: fromVC.name, inline: true },
+        { name: "To", value: toVC.name, inline: true },
         { name: "\u200B", value: "\u200B", inline: true },
-        { name: "成功", value: `${moved} 人`, inline: true },
-        { name: "失敗", value: `${failed} 人`, inline: true },
+        { name: "Success", value: `${moved}`, inline: true },
+        { name: "Failed", value: `${failed}`, inline: true },
       ])],
     });
   },
@@ -181,12 +181,12 @@ const gmoveCommand = {
     }
 
     await interaction.editReply({
-      embeds: [resultEmbed("🔀 全員を集合させました", [
-        { name: "移動元", value: fromVC.name, inline: true },
-        { name: "移動先", value: myVC.name, inline: true },
+      embeds: [resultEmbed("Users Gathered", [
+        { name: "From", value: fromVC.name, inline: true },
+        { name: "To", value: myVC.name, inline: true },
         { name: "\u200B", value: "\u200B", inline: true },
-        { name: "成功", value: `${moved} 人`, inline: true },
-        { name: "失敗", value: `${failed} 人`, inline: true },
+        { name: "Success", value: `${moved}`, inline: true },
+        { name: "Failed", value: `${failed}`, inline: true },
       ])],
     });
   },
@@ -222,12 +222,12 @@ const rmoveCommand = {
     }
 
     await interaction.editReply({
-      embeds: [resultEmbed("🔀 ロールメンバーを移動しました", [
-        { name: "ロール", value: role.name, inline: true },
-        { name: "移動先", value: myVC.name, inline: true },
+      embeds: [resultEmbed("Role Members Moved", [
+        { name: "Role", value: role.name, inline: true },
+        { name: "Destination", value: myVC.name, inline: true },
         { name: "\u200B", value: "\u200B", inline: true },
-        { name: "成功", value: `${moved} 人`, inline: true },
-        { name: "失敗", value: `${failed} 人`, inline: true },
+        { name: "Success", value: `${moved}`, inline: true },
+        { name: "Failed", value: `${failed}`, inline: true },
       ])],
     });
   },
@@ -264,12 +264,12 @@ const tmoveCommand = {
     }
 
     await interaction.editReply({
-      embeds: [resultEmbed("🔀 ロールメンバーを移動しました", [
-        { name: "ロール", value: role.name, inline: true },
-        { name: "移動先", value: targetVC.name, inline: true },
+      embeds: [resultEmbed("Role Members Moved", [
+        { name: "Role", value: role.name, inline: true },
+        { name: "Destination", value: targetVC.name, inline: true },
         { name: "\u200B", value: "\u200B", inline: true },
-        { name: "成功", value: `${moved} 人`, inline: true },
-        { name: "失敗", value: `${failed} 人`, inline: true },
+        { name: "Success", value: `${moved}`, inline: true },
+        { name: "Failed", value: `${failed}`, inline: true },
       ])],
     });
   },
@@ -329,11 +329,11 @@ const ymoveCommand = {
     }
 
     await interaction.editReply({
-      embeds: [resultEmbed("🔀 ユーザーを分散しました", [
-        { name: "分散元", value: fromVC.name, inline: true },
-        { name: "分散先", value: destVCs.map((v) => v.name).join(", ") },
-        { name: "成功", value: `${moved} 人`, inline: true },
-        { name: "失敗", value: `${failed} 人`, inline: true },
+      embeds: [resultEmbed("Users Distributed", [
+        { name: "Source", value: fromVC.name, inline: true },
+        { name: "Destinations", value: destVCs.map((v) => v.name).join(", ") },
+        { name: "Success", value: `${moved}`, inline: true },
+        { name: "Failed", value: `${failed}`, inline: true },
       ])],
     });
   },
@@ -376,10 +376,10 @@ const zmoveCommand = {
     }
 
     await interaction.editReply({
-      embeds: [resultEmbed("🔀 カテゴリ内全員を集合させました", [
-        { name: "集合先", value: toVC.name, inline: true },
-        { name: "成功", value: `${moved} 人`, inline: true },
-        { name: "失敗", value: `${failed} 人`, inline: true },
+      embeds: [resultEmbed("Category Users Gathered", [
+        { name: "Destination", value: toVC.name, inline: true },
+        { name: "Success", value: `${moved}`, inline: true },
+        { name: "Failed", value: `${failed}`, inline: true },
       ])],
     });
   },
