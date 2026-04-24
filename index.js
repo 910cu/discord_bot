@@ -69,6 +69,10 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
   ],
 });
+client.commands = new Collection();
+for (const cmd of allCommands) {
+  client.commands.set(cmd.data.name, cmd);
+}
 
 const defaultMessages = {
   "introNotify": "✅ <@{user}> さんの自己紹介を確認しました！",
@@ -168,13 +172,16 @@ async function getSettingsPayload(gid, type = "main", config = null) {
   const roles = g.roles || {};
   const features = { ...defaultFeatures, ...(g.features || {}) };
   const messages = g.messages || {};
+  
+  const guild = client.guilds.cache.get(gid);
+  const guildName = guild ? guild.name : "Unknown Server";
 
   const on = "●", off = "○";
   let embed = new EmbedBuilder().setColor(0x2b2d31);
   let components = [];
 
   if (type === "main") {
-    let desc = `# DIS COORDE\n-# v1.1.0 (Database Mode)\n\n`;
+    let desc = `# ${guildName}\n-# v1.2.0 (Multi-Guild Mode)\n\n`;
     const sections = [
       {
         cond: features.afkEnabled || features.vcPanelEnabled, title: "基本設定", lines: [
@@ -231,7 +238,8 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_panel", "🛠️ パネル", bStyle("vcPanelEnabled")), createBtn("cfg_btn_trigger", "➕ 自動作成", bStyle("vcCreationEnabled"))]),
       createRow([createBtn("cfg_btn_intro_kick", "📝 自動整理", bStyle("introKickEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled"))]),
-      createRow([createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled")), createBtn("config_messages", "💬 メッセージ", ButtonStyle.Secondary), createBtn("cfg_btn_raw", "📄 データ確認", ButtonStyle.Primary)])
+      createRow([createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled")), createBtn("config_messages", "💬 メッセージ", ButtonStyle.Secondary), createBtn("cfg_btn_raw", "📄 データ", ButtonStyle.Primary)]),
+      createRow([createBtn("cfg_btn_restart", "🔄 ボット再起動", ButtonStyle.Danger), createBtn("cfg_btn_refresh", "♻️ パネル再送", ButtonStyle.Secondary)])
     ];
   } else {
     const configs = {
@@ -355,7 +363,18 @@ async function updateKnockNotifyMessage(vc) {
 
 // ─── インタラクション ─────────────────────────────────────────────────────
 client.on(Events.InteractionCreate, async (i) => {
-  if (i.isChatInputCommand()) { const cmd = client.commands.get(i.commandName); if (cmd) cmd.execute(i).catch(console.error); return; }
+  if (i.isChatInputCommand()) {
+    const gid = i.guildId;
+    if (i.commandName === "setup") {
+      if (!i.member.permissions.has(PermissionFlagsBits.Administrator)) return i.reply({ content: "管理者のみ実行可能です。", ephemeral: true });
+      await updateGuildConfig(gid, { $set: { "dynamicVC.createPanelChannelId": i.channelId } });
+      await i.reply({ content: "✅ このチャンネルを管理パネル設置先に設定しました。パネルを送信します...", ephemeral: true });
+      return await setupSettingsPanel(gid);
+    }
+    const cmd = client.commands.get(i.commandName);
+    if (cmd) cmd.execute(i).catch(console.error);
+    return;
+  }
 
   const gid = i.guildId;
   const g = await getGuildConfig(gid);
@@ -402,6 +421,17 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid === "cfg_btn_raw") {
       const json = JSON.stringify(g, null, 2);
       return i.reply({ content: `### 📂 データベース内の生データ\n\`\`\`json\n${json.length > 1900 ? json.substring(0, 1900) + "...(省略)" : json}\n\`\`\``, ephemeral: true });
+    }
+    if (cid === "cfg_btn_restart") {
+      await i.reply({ content: "🔄 ボットを再起動します... (数秒後に復帰します)", ephemeral: true });
+      console.log("🚀 User requested restart. Exiting...");
+      process.exit(0);
+    }
+    if (cid === "cfg_btn_refresh") {
+      await i.reply({ content: "♻️ パネルを再送信しています...", ephemeral: true });
+      await setupSettingsPanel(gid, g);
+      await setupCreatePanel(gid);
+      return;
     }
     if (cid === "cfg_intro_restore") {
       await i.reply({ content: "⏳ チャンネル内のメッセージをスキャンして復元を開始します...", ephemeral: true });
@@ -612,6 +642,16 @@ client.on(Events.MessageDelete, m => handleIntroUpdate(m, "delete"));
 // ─── 起動処理 ────────────────────────────────────────────────────────────────
 client.once(Events.ClientReady, async () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
+  
+  // スラッシュコマンドの登録 (全サーバー一括)
+  const rest = new REST({ version: "10" }).setToken(token);
+  try {
+    console.log("📝 スラッシュコマンドを登録中...");
+    const commandsData = allCommands.map(c => c.data.toJSON());
+    await rest.put(Routes.applicationCommands(client.user.id), { body: commandsData });
+    console.log("✅ スラッシュコマンドの登録が完了しました。");
+  } catch (err) { console.error("❌ コマンド登録エラー:", err); }
+
   const guilds = client.guilds.cache;
   for (const guild of guilds.values()) {
     const gid = guild.id;

@@ -385,6 +385,20 @@ const zmoveCommand = {
   },
 };
 
+// ─── /setup ───────────────────────────────────────────────────────────────────
+// 管理用設定パネルを現在のチャンネルに送信
+const setupCommand = {
+  data: new SlashCommandBuilder()
+    .setName("setup")
+    .setDescription("管理用設定パネルをこのチャンネルに送信します")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  async execute(interaction) {
+    // 実際の実装は index.js 側で行うため、ここでは何もしないか
+    // もしくは、index.js 側でこのコマンドをフックする
+  },
+};
+
 module.exports = [
   moveCommand,
   cmoveCommand,
@@ -394,4 +408,5 @@ module.exports = [
   tmoveCommand,
   ymoveCommand,
   zmoveCommand,
+  setupCommand,
 ];
