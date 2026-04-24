@@ -148,10 +148,10 @@ function getSettingsPayload(type = "main") {
           let label = parts[0];
           let value = parts[1];
           let indicator = "";
-          if (value === "`未設定`" || isOff) indicator = " 🔴";
+          if (value === "`未設定`" || isOff) indicator = " 🟥";
           desc += `-# ${label}\n┕ ${isOff ? "`DISABLED`" : value}${indicator}\n`;
         } else {
-          desc += `> ${l.text}${isOff ? " 🔴" : ""}\n`;
+          desc += `> ${l.text}${isOff ? " 🟥" : ""}\n`;
         }
       });
       desc += "\n";
@@ -185,7 +185,7 @@ function getSettingsPayload(type = "main") {
 
     const isEnabled = features[config.feature];
     const statusLabel = isEnabled ? `【 ${on} ENABLED 】` : `【 ${off} DISABLED 】`;
-    const cleanedDesc = config.desc.replace(/`未設定`/g, "`未設定` 🔴");
+    const cleanedDesc = config.desc.replace(/`未設定`/g, "`未設定` 🟥");
     embed.setTitle(config.title).setDescription(`${statusLabel}\n\n${cleanedDesc}`);
     const row1Btns = [createBtn(config.toggle, `${config.label}: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger)];
     if (config.extraBtn) row1Btns.push(config.extraBtn.setDisabled(!isEnabled));
