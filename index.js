@@ -168,7 +168,7 @@ async function getSettingsPayload(gid, type = "main") {
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_panel", "🛠️ パネル", bStyle("vcPanelEnabled")), createBtn("cfg_btn_trigger", "➕ 自動作成", bStyle("vcCreationEnabled"))]),
       createRow([createBtn("cfg_btn_intro_kick", "📝 自動整理", bStyle("introKickEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled"))]),
-      createRow([createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled")), createBtn("config_messages", "💬 メッセージ", ButtonStyle.Secondary)])
+      createRow([createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled")), createBtn("config_messages", "💬 メッセージ", ButtonStyle.Secondary), createBtn("cfg_btn_raw", "📄 データ確認", ButtonStyle.Primary)])
     ];
   } else {
     const configs = {
@@ -316,6 +316,11 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ content: "移動させる人を選択", components: [createRow([new UserSelectMenuBuilder().setCustomId(`vc_afk_select_${vc.id}`).setPlaceholder("選択").setMaxValues(1)])], ephemeral: true });
     }
     if (cid === "cfg_back_main") return i.update(await getSettingsPayload(gid, "main"));
+    if (cid === "cfg_btn_raw") {
+      const data = await Guild.findOne({ guildId: gid });
+      const json = JSON.stringify(data, null, 2);
+      return i.reply({ content: `### 📂 データベース内の生データ\n\`\`\`json\n${json.length > 1900 ? json.substring(0, 1900) + "...(省略)" : json}\n\`\`\``, ephemeral: true });
+    }
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", "")));
     
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled" };
