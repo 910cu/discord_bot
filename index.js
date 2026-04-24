@@ -305,25 +305,10 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     if (cid.startsWith("knock_approve_") || cid.startsWith("knock_deny_")) {
       const [, , vcId, uid] = cid.split("_"), vc = i.guild.channels.cache.get(vcId);
-      const isOwner = vcOwners.get(vcId) === i.user.id;
-      if (!isOwner || !vc) return i.deferUpdate();
-      if (i.channel.type === ChannelType.DM) await i.update({ content: `✅ ${cid.includes("approve") ? "許可" : "拒否"}しました。`, components: [] });
-      else await i.deferUpdate();
-      pendingRequests.get(vcId)?.delete(uid);
+      if (vcOwners.get(vcId) !== i.user.id || !vc) return i.deferUpdate();
+      await i.deferUpdate(); pendingRequests.get(vcId)?.delete(uid);
       if (cid.includes("approve")) { if (!allowedUsers.has(vcId)) allowedUsers.set(vcId, new Set()); allowedUsers.get(vcId).add(uid); const m = await i.guild.members.fetch(uid).catch(() => null); if (m?.voice.channel) m.voice.setChannel(vc).catch(() => vc.send(`✅ <@${uid}> 入室許可`)); else vc.send(`✅ <@${uid}> 入室許可`).then(msg => setTimeout(() => msg.delete().catch(() => { }), 60000)); }
       return updateKnockNotifyMessage(vc, i.user.id);
-    }
-    if (cid.startsWith("role_assign_")) {
-      const [, , uid, mode] = cid.split("_");
-      const member = await i.guild.members.fetch(uid).catch(() => null);
-      if (!member) return i.update({ content: "❌ ユーザーが見つかりませんでした。", components: [] });
-      if (mode === "none") return i.update({ content: "✅ 拒否しました。", components: [] });
-      try {
-        const roleId = roles[mode];
-        if (roleId) await member.roles.add(roleId);
-        await i.update({ content: `✅ <@${uid}> を ${mode === 'male' ? '男性' : '女性'}グループ（ロール）に追加しました！`, components: [] });
-      } catch (e) { await i.update({ content: `❌ エラー: ${e.message}`, components: [] }); }
-      return;
     }
     if (cid.startsWith("bio_input_")) return i.user.id === cid.replace("bio_input_", "") ? i.showModal(new ModalBuilder().setCustomId(`bio_modal_${i.user.id}`).setTitle("自己紹介入力").addComponents(createRow([new TextInputBuilder().setCustomId("bio").setLabel("自己紹介").setStyle(TextInputStyle.Paragraph).setMaxLength(300)]))) : i.deferUpdate();
   }
@@ -346,6 +331,15 @@ client.on(Events.InteractionCreate, async (i) => {
     if (map[field]) { config.dynamicVC[map[field]] = val; dynamicVC[map[field]] = val; } else { config.roles[field] = val; roles[field] = val; }
     fs.writeFileSync("./config.json", JSON.stringify(config, null, 2)); await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(); if (field === "panel") setupCreatePanel();
   }
+  if (i.isStringSelectMenu() && i.customId === "dm_move_vc") {
+    const vcId = i.values[0], guild = client.guilds.cache.get(guildId);
+    const member = await guild.members.fetch(i.user.id).catch(() => null);
+    if (!member || !member.voice.channel) return i.update({ content: "❌ ボイスチャンネルに参加していないため移動できません。", components: [] });
+    try {
+      await member.voice.setChannel(vcId);
+      await i.update({ content: `✅ <#${vcId}> へ移動しました！`, components: [] });
+    } catch (e) { await i.update({ content: `❌ 移動に失敗しました: ${e.message}`, components: [] }); }
+  }
   if (i.isUserSelectMenu() && i.customId.startsWith("vc_afk_select_")) {
     const vcId = i.customId.split("_")[3], target = await i.guild.members.fetch(i.values[0]).catch(() => null);
     if (!i.member.voice.channel || i.member.voice.channelId !== vcId || !target || target.voice.channelId !== vcId) return i.reply({ content: "無効", ephemeral: true });
@@ -363,37 +357,8 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   }
   if (n.channelId && tempChannels.has(n.channelId)) {
     const vc = n.channel, m = n.member, gender = genderMode.get(vc.id);
-    if (features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== m.id && !m.roles.cache.has(roles[gender])) {
-      try {
-        await m.voice.disconnect();
-        m.send((messagesConfig[gender === 'male' ? 'genderMaleOnlyDM' : 'genderFemaleOnlyDM'] || "").replace(/{vcName}/g, vc.name).replace(/\\n/g, '\n')).catch(() => { });
-        const owner = await vc.guild.members.fetch(vcOwners.get(vc.id)).catch(() => null);
-        if (owner) {
-          const row = createRow([
-            createBtn(`role_assign_${m.id}_male`, "♂️ 男性に追加", ButtonStyle.Primary),
-            createBtn(`role_assign_${m.id}_female`, "♀️ 女性に追加", ButtonStyle.Primary),
-            createBtn(`role_assign_${m.id}_none`, "❌ 拒否", ButtonStyle.Secondary)
-          ]);
-          await owner.send({ content: `⚠️ <@${m.id}> が性別制限（${gender === 'male' ? '男性専用' : '女性専用'}）により **${vc.name}** から退出させられました。\nこのユーザーを適切なグループ（ロール）に追加しますか？`, components: [row] }).catch(() => { });
-        }
-      } catch { } return;
-    }
-    if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== m.id && !allowedUsers.get(vc.id)?.has(m.id)) {
-      try {
-        await m.voice.disconnect();
-        if (!pendingRequests.has(vc.id)) pendingRequests.set(vc.id, new Map());
-        pendingRequests.get(vc.id).set(m.id, true);
-        await updateKnockNotifyMessage(vc, vcOwners.get(vc.id));
-        const owner = await vc.guild.members.fetch(vcOwners.get(vc.id)).catch(() => null);
-        if (owner) {
-          const row = createRow([
-            createBtn(`knock_approve_${vc.id}_${m.id}`, "✅ 許可", ButtonStyle.Success),
-            createBtn(`knock_deny_${vc.id}_${m.id}`, "❌ 拒否", ButtonStyle.Danger)
-          ]);
-          await owner.send({ content: `🚪 <@${m.id}> が **${vc.name}** にノックしました。\nDMから許可・拒否を選択できます。`, components: [row] }).catch(() => { });
-        }
-      } catch { } return;
-    }
+    if (features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== m.id && !m.roles.cache.has(roles[gender])) { try { await m.voice.disconnect(); m.send((messagesConfig[gender === 'male' ? 'genderMaleOnlyDM' : 'genderFemaleOnlyDM'] || "").replace(/{vcName}/g, vc.name).replace(/\\n/g, '\n')).catch(() => { }); } catch { } return; }
+    if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== m.id && !allowedUsers.get(vc.id)?.has(m.id)) { try { await m.voice.disconnect(); if (!pendingRequests.has(vc.id)) pendingRequests.set(vc.id, new Map()); pendingRequests.get(vc.id).set(m.id, true); await updateKnockNotifyMessage(vc, vcOwners.get(vc.id)); } catch { } return; }
     if (o.channelId !== n.channelId && features.vcIntroDisplayEnabled) { const db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {}; if (db[m.id]?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${db[m.id].content}`).setFooter({ text: "DIS COORDE Profile System" })] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } } }
   }
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
@@ -421,7 +386,19 @@ const handleIntroUpdate = async (msg, type = "create") => {
   fs.writeFileSync("./introDB.json", JSON.stringify(db, null, 2));
 };
 
-client.on(Events.MessageCreate, m => handleIntroUpdate(m, "create"));
+client.on(Events.MessageCreate, async m => {
+  if (m.author.bot) return;
+  if (m.channel.type === ChannelType.DM) {
+    const guild = client.guilds.cache.get(guildId); if (!guild) return;
+    const member = await guild.members.fetch(m.author.id).catch(() => null);
+    if (!member || !member.voice.channel) return m.reply("❌ 移動するには、まずサーバーのボイスチャンネルに参加してください。");
+    const activeVCs = [...tempChannels].map(id => guild.channels.cache.get(id)).filter(c => c && c.id !== member.voice.channelId);
+    if (activeVCs.length === 0) return m.reply("現在、移動可能な他のグループ（VC）はありません。");
+    const menu = new StringSelectMenuBuilder().setCustomId("dm_move_vc").setPlaceholder("移動先のグループを選択").addOptions(activeVCs.slice(0, 25).map(c => ({ label: c.name, value: c.id, description: `現在の人数: ${c.members.size}人` })));
+    return m.reply({ content: "📂 **グループ移動**\n移動したいグループを選択してください。", components: [createRow([menu])] });
+  }
+  handleIntroUpdate(m, "create");
+});
 client.on(Events.MessageUpdate, (o, n) => handleIntroUpdate(n, "update"));
 client.on(Events.MessageDelete, m => handleIntroUpdate(m, "delete"));
 
