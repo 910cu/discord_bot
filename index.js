@@ -184,8 +184,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     let desc = `# ${guildName}\n-# v1.2.0 (Multi-Guild Mode)\n\n`;
     const sections = [
       {
-        cond: features.afkEnabled || features.vcPanelEnabled, title: "基本設定", lines: [
-          { cond: features.afkEnabled, text: `AFK (寝落ち) ─ ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}` },
+        cond: features.vcPanelEnabled, title: "基本設定", lines: [
           { cond: features.vcPanelEnabled, text: `VC作成パネル ─ ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}` }
         ]
       },
@@ -201,17 +200,6 @@ async function getSettingsPayload(gid, type = "main", config = null) {
           { text: `確認先: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}` },
           { text: `警告 ─ 参加 ${dynamicVC.introWarnMinutes ?? 2880} 分後` },
           { text: `実行 ─ 参加 ${dynamicVC.introKickMinutes ?? 4320} 分後` }
-        ]
-      },
-      {
-        cond: features.vcIntroDisplayEnabled, title: "VC内自己紹介表示", lines: [
-          { text: `ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}` }
-        ]
-      },
-      {
-        cond: features.genderRoleEnabled, title: "部屋制限設定", lines: [
-          { text: `♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定`"}` },
-          { text: `♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定`"}` }
         ]
       }
     ];
@@ -240,7 +228,12 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     ];
   } else if (type === "vc_features") {
     const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
-    embed.setTitle("🎙️ VC内機能設定").setDescription("各VC内機能の詳細設定や有効化・無効化が行えます。\n\n- 💤 **AFK (寝落ち)**\n- 🖼️ **自己紹介表示**\n- 🚻 **部屋制限 (性別ロール)**");
+    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
+    let subDesc = "### 🎙️ VC内機能設定\n各機能の詳細設定や有効化・無効化が行えます。\n\n";
+    subDesc += `**💤 AFK (寝落ち)** [ ${fStatus("afkEnabled")} ]\n┕ 移動先: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定` 🟥"}\n\n`;
+    subDesc += `**🖼️ 自己紹介表示** [ ${fStatus("vcIntroDisplayEnabled")} ]\n┕ ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥"}\n\n`;
+    subDesc += `**🚻 部屋制限** [ ${fStatus("genderRoleEnabled")} ]\n┕ ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定` 🟥"}\n┕ ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定` 🟥"}\n`;
+    embed.setTitle(null).setDescription(subDesc);
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled")), createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled"))]),
       createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
