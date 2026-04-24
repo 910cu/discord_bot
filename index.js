@@ -461,7 +461,10 @@ client.on(Events.InteractionCreate, async (i) => {
     else if (field === "introsource") category = "intro_display";
     else if (["male", "female"].includes(field)) category = "vc";
     await i.update(getSettingsPayload(i.guildId, category));
-    setupSettingsPanel(i.guildId); if (field === "panel") setupCreatePanel(i.guildId);
+    setupSettingsPanel(i.guildId); 
+    if (field === "panel") setupCreatePanel(i.guildId);
+    if (["introcheck", "introsource"].includes(field)) syncIntrosOnly(i.guild);
+    return;
   }
   if (i.isUserSelectMenu() && i.customId.startsWith("vc_afk_select_")) {
     const config = getGuildConfig(i.guildId);
