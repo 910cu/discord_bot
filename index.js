@@ -186,6 +186,7 @@ function getSettingsPayload(type = "main") {
     const isEnabled = features[config.feature];
     const statusLabel = isEnabled ? `【 ${on} 有効 】` : `【 ${off} 無効 】`;
     const cleanedDesc = config.desc.replace(/`未設定`/g, "`未設定` 🟥");
+    embed.setColor(isEnabled ? 0x2b2d31 : 0xed4245);
     embed.setTitle(config.title).setDescription(`${statusLabel}\n\n${cleanedDesc}`);
     const row1Btns = [createBtn(config.toggle, `${config.label}: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger)];
     if (config.extraBtn) row1Btns.push(config.extraBtn.setDisabled(!isEnabled));
