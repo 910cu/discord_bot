@@ -156,6 +156,8 @@ function getSettingsPayload(type = "main") {
       });
       desc += "\n";
     });
+    const hasWarning = desc.includes("🟥");
+    embed.setColor(hasWarning ? 0xed4245 : 0x2b2d31);
     embed.setTitle("⚙️ コントロールパネル").setDescription(desc);
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK"), createBtn("cfg_btn_panel", "🛠️ パネル"), createBtn("cfg_btn_trigger", "➕ 自動作成")]),
