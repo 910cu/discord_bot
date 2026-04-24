@@ -461,7 +461,7 @@ client.on(Events.InteractionCreate, async (i) => {
     else if (field === "introsource") category = "intro_display";
     else if (["male", "female"].includes(field)) category = "vc";
     await i.update(getSettingsPayload(i.guildId, category));
-    setupSettingsPanel(i.guildId); 
+    setupSettingsPanel(i.guildId);
     if (field === "panel") setupCreatePanel(i.guildId);
     if (["introcheck", "introsource"].includes(field)) syncIntrosOnly(i.guild);
     return;
@@ -485,7 +485,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     try { const vc = await n.guild.channels.create({ name: limit ? `雑談${limit}人部屋` : dynamicVC.channelName.replace("{user}", n.member.displayName), type: ChannelType.GuildVoice, parent: n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] }); tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id); await n.member.voice.setChannel(vc); await sendOrUpdateControlPanel(vc); } catch { }
     return;
   }
-  if (n.channelId && tempChannels.has(n.channelId)) {
+  if (n.channelId && (tempChannels.has(n.channelId) || (config.dynamicVC.cleanupCategoryId && n.channel?.parentId === config.dynamicVC.cleanupCategoryId))) {
     const vc = n.channel, m = n.member, gender = genderMode.get(vc.id);
     if (features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== m.id && !m.roles.cache.has(guildRoles[gender])) {
       try {
@@ -530,7 +530,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
       }
     }
   }
-  if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
+  if (o.channelId && (tempChannels.has(o.channelId) || (config.dynamicVC.cleanupCategoryId && o.channel?.parentId === config.dynamicVC.cleanupCategoryId)) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
     if (ch?.members.size === 0) { try { await ch.delete();[tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs].forEach(s => s.delete(o.channelId)); } catch { } }
     else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = ch.members.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch); } }
@@ -544,7 +544,7 @@ const handleIntroUpdate = async (msg, type = "create") => {
   const checkCh = dynamicVC.introCheckChannelId || dynamicVC.introChannelId, sourceCh = dynamicVC.introSourceChannelId || dynamicVC.introChannelId;
   if (![checkCh, sourceCh].includes(msg.channelId) || msg.author?.bot) return;
   const uid = msg.author?.id; if (!uid) return syncIntrosOnly(msg.guild);
-  
+
   if (isDel) {
     const userMsgs = (await msg.channel.messages.fetch({ limit: 50 })).filter(m => m.author.id === uid);
     if (userMsgs.size === 0) { if (msg.channelId === sourceCh) updateMemberIntro(msg.guildId, uid, { content: null }); }
@@ -606,6 +606,12 @@ client.once(Events.ClientReady, async () => {
   for (const guildId of Object.keys(configs)) {
     try {
       const guild = await client.guilds.fetch(guildId);
+      const config = configs[guildId];
+      // Re-populate tempChannels
+      if (config.dynamicVC.cleanupCategoryId) {
+        const channels = await guild.channels.fetch();
+        channels.filter(c => c.type === ChannelType.GuildVoice && c.parentId === config.dynamicVC.cleanupCategoryId).forEach(c => tempChannels.add(c.id));
+      }
       setupSettingsPanel(guildId);
       setupCreatePanel(guildId);
       syncAndCheckIntros(guild);
