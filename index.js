@@ -104,7 +104,7 @@ function getSettingsPayload(type = "main") {
   let components = [];
 
   if (type === "main") {
-    let desc = `-# SYSTEM DASHBOARD | Version 1.0.0\n\n`;
+    let desc = `-# v1.0.0\n\n`;
     const sections = [
       {
         cond: features.afkEnabled || features.vcPanelEnabled, title: "基本設定", lines: [
@@ -140,7 +140,7 @@ function getSettingsPayload(type = "main") {
     ];
     sections.forEach(s => {
       const isSectionOff = s.cond === false;
-      desc += `### ${s.title}${isSectionOff ? " ⦗OFF⦘" : ""}\n`;
+      desc += `### ${s.title}${isSectionOff ? " ⦗無効⦘" : ""}\n`;
       s.lines.forEach(l => {
         const isOff = l.cond === false || isSectionOff;
         const parts = l.text.split(' ─ ');
@@ -149,14 +149,14 @@ function getSettingsPayload(type = "main") {
           let value = parts[1];
           let indicator = "";
           if (value === "`未設定`" || isOff) indicator = " 🟥";
-          desc += `-# ${label}\n┕ ${isOff ? "`DISABLED`" : value}${indicator}\n`;
+          desc += `-# ${label}\n┕ ${isOff ? "`無効`" : value}${indicator}\n`;
         } else {
           desc += `> ${l.text}${isOff ? " 🟥" : ""}\n`;
         }
       });
       desc += "\n";
     });
-    embed.setTitle("⚙️ SYSTEM CONTROL PANEL").setDescription(desc);
+    embed.setTitle("⚙️ コントロールパネル").setDescription(desc);
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK"), createBtn("cfg_btn_panel", "🛠️ パネル"), createBtn("cfg_btn_trigger", "➕ 自動作成")]),
       createRow([createBtn("cfg_btn_intro_kick", "📝 自動整理"), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示")]),
@@ -184,7 +184,7 @@ function getSettingsPayload(type = "main") {
     }[type];
 
     const isEnabled = features[config.feature];
-    const statusLabel = isEnabled ? `【 ${on} ENABLED 】` : `【 ${off} DISABLED 】`;
+    const statusLabel = isEnabled ? `【 ${on} 有効 】` : `【 ${off} 無効 】`;
     const cleanedDesc = config.desc.replace(/`未設定`/g, "`未設定` 🟥");
     embed.setTitle(config.title).setDescription(`${statusLabel}\n\n${cleanedDesc}`);
     const row1Btns = [createBtn(config.toggle, `${config.label}: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger)];
