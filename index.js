@@ -76,7 +76,6 @@ function getGuildConfig(guildId) {
     configs[guildId] = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
     saveGuildConfig(guildId, configs[guildId]);
   }
-  // Ensure nested objects exist
   configs[guildId].features = configs[guildId].features || { ...DEFAULT_CONFIG.features };
   configs[guildId].dynamicVC = configs[guildId].dynamicVC || { ...DEFAULT_CONFIG.dynamicVC };
   configs[guildId].roles = configs[guildId].roles || { ...DEFAULT_CONFIG.roles };
@@ -87,6 +86,26 @@ function saveGuildConfig(guildId, config) {
   const configs = getGuildConfigs();
   configs[guildId] = config;
   fs.writeFileSync(GUILD_CONFIG_PATH, JSON.stringify(configs, null, 2));
+}
+
+// ─── データベース管理 (introDB) ────────────────────────────────────────────────
+const INTRO_DB_PATH = "./introDB.json";
+function getIntroDB() {
+  if (!fs.existsSync(INTRO_DB_PATH)) fs.writeFileSync(INTRO_DB_PATH, JSON.stringify({}, null, 2));
+  return JSON.parse(fs.readFileSync(INTRO_DB_PATH, "utf-8"));
+}
+function saveIntroDB(db) {
+  fs.writeFileSync(INTRO_DB_PATH, JSON.stringify(db, null, 2));
+}
+function getMemberIntro(guildId, userId) {
+  const db = getIntroDB();
+  return db[guildId]?.[userId] || null;
+}
+function updateMemberIntro(guildId, userId, data) {
+  const db = getIntroDB();
+  if (!db[guildId]) db[guildId] = {};
+  db[guildId][userId] = { ...(db[guildId][userId] || {}), ...data };
+  saveIntroDB(db);
 }
 
 // ─── メッセージ管理 ──────────────────────────────────────────────────────────
@@ -267,12 +286,9 @@ async function setupSettingsPanel(guildId, channelId = null) {
   const config = getGuildConfig(guildId);
   const targetChannelId = channelId || config.settingsChannelId;
   if (!targetChannelId) return;
-
   const channel = client.channels.cache.get(targetChannelId);
   if (!channel) return;
-
   if (channelId) { config.settingsChannelId = channelId; saveGuildConfig(guildId, config); }
-
   try { const msgs = await channel.messages.fetch({ limit: 10 }); for (const m of msgs.filter(m => m.author.id === client.user.id).values()) await m.delete().catch(() => { }); } catch { }
   const meta = bumpPanelVersion(guildId), payload = getSettingsPayload(guildId, "main");
   payload.embeds[0].setFooter({ text: `Last Updated: ${new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}` });
@@ -428,11 +444,7 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("rename_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("rename_modal_", "")); await silentReply(i); if (vc) await updateVcName(vc, i.fields.getTextInputValue("name").trim()); }
     if (cid === "intro_time_modal") {
       const w = parseInt(i.fields.getTextInputValue("warn")), k = parseInt(i.fields.getTextInputValue("kick"));
-      if (!isNaN(w) && !isNaN(k)) {
-        config.dynamicVC.introWarnMinutes = w; config.dynamicVC.introKickMinutes = k;
-        saveGuildConfig(i.guildId, config);
-        await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(i.guildId);
-      }
+      if (!isNaN(w) && !isNaN(k)) { config.dynamicVC.introWarnMinutes = w; config.dynamicVC.introKickMinutes = k; saveGuildConfig(i.guildId, config); await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(i.guildId); }
     }
     if (cid.startsWith("msg_submit_")) { const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"]; keys.forEach(k => { messagesConfig[k] = i.fields.getTextInputValue(k).replace(/\n/g, '\\n'); }); fs.writeFileSync(msgConfigPath, JSON.stringify(messagesConfig, null, 2)); return i.reply({ content: "✅ 更新完了", ephemeral: true }); }
     if (cid.startsWith("bio_modal_")) { const bio = i.fields.getTextInputValue("bio").trim(); await silentReply(i); if (bio) memberBios.set(i.user.id, bio); else memberBios.delete(i.user.id); }
@@ -443,7 +455,13 @@ client.on(Events.InteractionCreate, async (i) => {
     const field = i.customId.replace("select_cfg_", ""), val = i.values[0], map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", introcheck: "introCheckChannelId", introsource: "introSourceChannelId" };
     if (map[field]) { config.dynamicVC[map[field]] = val; } else { config.roles[field] = val; }
     saveGuildConfig(i.guildId, config);
-    await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(i.guildId); if (field === "panel") setupCreatePanel(i.guildId);
+    let category = "main";
+    if (["afk", "panel", "trigger", "trigger4", "trigger5"].includes(field)) category = field.startsWith("trigger") ? "trigger" : field;
+    else if (field === "introcheck") category = "intro_kick";
+    else if (field === "introsource") category = "intro_display";
+    else if (["male", "female"].includes(field)) category = "vc";
+    await i.update(getSettingsPayload(i.guildId, category));
+    setupSettingsPanel(i.guildId); if (field === "panel") setupCreatePanel(i.guildId);
   }
   if (i.isUserSelectMenu() && i.customId.startsWith("vc_afk_select_")) {
     const config = getGuildConfig(i.guildId);
@@ -497,7 +515,17 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
         }
       } catch { } return;
     }
-    if (o.channelId !== n.channelId && features.vcIntroDisplayEnabled) { const db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {}; if (db[m.id]?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${db[m.id].content}`)] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } } }
+    if (o.channelId !== n.channelId && features.vcIntroDisplayEnabled) {
+      const intro = getMemberIntro(n.guild.id, m.id);
+      if (intro?.content) {
+        if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set());
+        if (!introPosted.get(vc.id).has(m.id)) {
+          introPosted.get(vc.id).add(m.id);
+          const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${intro.content}`)] }).catch(() => null);
+          if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id);
+        }
+      }
+    }
   }
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
@@ -512,18 +540,21 @@ const handleIntroUpdate = async (msg, type = "create") => {
   const { dynamicVC } = config;
   const checkCh = dynamicVC.introCheckChannelId || dynamicVC.introChannelId, sourceCh = dynamicVC.introSourceChannelId || dynamicVC.introChannelId;
   if (![checkCh, sourceCh].includes(msg.channelId) || msg.author?.bot) return;
-  const db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {};
   const uid = msg.author?.id; if (!uid) return syncIntrosOnly(msg.guild);
+  
   if (isDel) {
     const userMsgs = (await msg.channel.messages.fetch({ limit: 50 })).filter(m => m.author.id === uid);
-    if (userMsgs.size === 0) { if (db[uid] && msg.channelId === sourceCh) delete db[uid].content; }
-    else { const last = userMsgs.first(); if (!db[uid]) db[uid] = {}; if (msg.channelId === checkCh) db[uid].introduced = true; if (msg.channelId === sourceCh) db[uid].content = (last.content + (last.attachments.size ? "\n" + last.attachments.map(a => a.url).join("\n") : "")).trim(); }
+    if (userMsgs.size === 0) { if (msg.channelId === sourceCh) updateMemberIntro(msg.guildId, uid, { content: null }); }
+    else { const last = userMsgs.first(); if (msg.channelId === checkCh) updateMemberIntro(msg.guildId, uid, { introduced: true }); if (msg.channelId === sourceCh) updateMemberIntro(msg.guildId, uid, { content: (last.content + (last.attachments.size ? "\n" + last.attachments.map(a => a.url).join("\n") : "")).trim() }); }
   } else {
-    if (!db[uid]) db[uid] = {}; if (msg.channelId === checkCh) db[uid].introduced = true;
-    if (msg.channelId === sourceCh) db[uid].content = (msg.content + (msg.attachments.size ? "\n" + msg.attachments.map(a => a.url).join("\n") : "")).trim();
-    if (type === "create" && msg.channelId === checkCh) { if (db[uid].warnMsgId) { try { await (await msg.guild.channels.cache.get(checkCh).messages.fetch(db[uid].warnMsgId)).delete(); } catch { } delete db[uid].warnMsgId; } msg.reply({ content: (messagesConfig.introNotify || "✅ <@{user}> 確認").replace(/{user}/g, uid).replace(/\\n/g, '\n') }).then(r => setTimeout(() => r.delete().catch(() => { }), 10000)).catch(() => { }); }
+    if (msg.channelId === checkCh) updateMemberIntro(msg.guildId, uid, { introduced: true });
+    if (msg.channelId === sourceCh) updateMemberIntro(msg.guildId, uid, { content: (msg.content + (msg.attachments.size ? "\n" + msg.attachments.map(a => a.url).join("\n") : "")).trim() });
+    if (type === "create" && msg.channelId === checkCh) {
+      const intro = getMemberIntro(msg.guildId, uid);
+      if (intro?.warnMsgId) { try { await (await msg.guild.channels.cache.get(checkCh).messages.fetch(intro.warnMsgId)).delete(); } catch { } updateMemberIntro(msg.guildId, uid, { warnMsgId: null }); }
+      msg.reply({ content: (messagesConfig.introNotify || "✅ <@{user}> 確認").replace(/{user}/g, uid).replace(/\\n/g, '\n') }).then(r => setTimeout(() => r.delete().catch(() => { }), 10000)).catch(() => { });
+    }
   }
-  fs.writeFileSync("./introDB.json", JSON.stringify(db, null, 2));
 };
 
 client.on(Events.MessageCreate, m => handleIntroUpdate(m, "create"));
@@ -533,13 +564,16 @@ client.on(Events.MessageDelete, m => handleIntroUpdate(m, "delete"));
 async function syncIntrosOnly(guild) {
   const config = getGuildConfig(guild.id);
   const { dynamicVC } = config;
-  const checkCh = dynamicVC.introCheckChannelId || dynamicVC.introChannelId, sourceCh = dynamicVC.introSourceChannelId || dynamicVC.introChannelId, db = fs.existsSync("./introDB.json") ? JSON.parse(fs.readFileSync("./introDB.json", "utf-8")) : {};
+  const checkCh = guild.channels.cache.get(dynamicVC.introCheckChannelId || dynamicVC.introChannelId), sourceCh = guild.channels.cache.get(dynamicVC.introSourceChannelId || dynamicVC.introChannelId);
+  if (!checkCh || !sourceCh) return;
   const fetchAll = async (ch) => {
     let authors = new Map(), last = null; while (true) { const msgs = await ch.messages.fetch({ limit: 100, before: last }).catch(() => new Map()); if (msgs.size === 0) break; msgs.forEach(m => { if (!m.author.bot && !authors.has(m.author.id)) authors.set(m.author.id, (m.content + (m.attachments.size ? "\n" + m.attachments.map(a => a.url).join("\n") : "")).trim()); }); last = msgs.last().id; if (msgs.size < 100) break; } return authors;
   };
-  const checks = await fetchAll(guild.channels.cache.get(checkCh)), sources = checkCh === sourceCh ? checks : await fetchAll(guild.channels.cache.get(sourceCh));
-  Object.keys(db).forEach(uid => { if (checks.has(uid)) db[uid].introduced = true; if (sources.has(uid)) db[uid].content = sources.get(uid); else delete db[uid].content; });
-  fs.writeFileSync("./introDB.json", JSON.stringify(db, null, 2));
+  const checks = await fetchAll(checkCh), sources = checkCh.id === sourceCh.id ? checks : await fetchAll(sourceCh);
+  const db = getIntroDB(); if (!db[guild.id]) db[guild.id] = {};
+  checks.forEach((_, uid) => { if (!db[guild.id][uid]) db[guild.id][uid] = {}; db[guild.id][uid].introduced = true; });
+  sources.forEach((content, uid) => { if (!db[guild.id][uid]) db[guild.id][uid] = {}; db[guild.id][uid].content = content; });
+  saveIntroDB(db);
 }
 
 async function syncAndCheckIntros(guild) {
@@ -547,14 +581,19 @@ async function syncAndCheckIntros(guild) {
   setInterval(async () => {
     const config = getGuildConfig(guild.id);
     if (!config.features.introKickEnabled) return;
-    const db = JSON.parse(fs.readFileSync("./introDB.json", "utf-8")), members = await guild.members.fetch(), now = Date.now(), updated = [];
+    const db = getIntroDB()[guild.id] || {};
+    const members = await guild.members.fetch(), now = Date.now();
     for (const m of members.values()) {
       if (m.user.bot || db[m.id]?.introduced) continue;
       const elapsed = now - m.joinedTimestamp, warn = (config.dynamicVC.introWarnMinutes || 2880) * 60000, kick = (config.dynamicVC.introKickMinutes || 4320) * 60000;
-      if (elapsed >= kick) { try { await m.send((messagesConfig.introKickDM || "未記入のためキック").replace(/\\n/g, '\n')); } catch { } await m.kick("未記入"); db[m.id] = { kicked: true }; updated.push(m.id); }
-      else if (elapsed >= warn && !db[m.id]?.warned) { db[m.id] = { ...db[m.id], warned: true }; updated.push(m.id); const w = await guild.channels.cache.get(config.dynamicVC.introCheckChannelId || config.dynamicVC.introChannelId).send((messagesConfig.introWarnMsg || "⚠️ <@{user}> 期限間近").replace(/{user}/g, m.id).replace(/{leftMinutes}/g, Math.floor((kick - elapsed) / 60000)).replace(/\\n/g, '\n')); db[m.id].warnMsgId = w.id; setTimeout(() => w.delete().catch(() => { }), kick - elapsed); }
+      if (elapsed >= kick) { try { await m.send((messagesConfig.introKickDM || "未記入のためキック").replace(/\\n/g, '\n')); } catch { } await m.kick("未記入"); updateMemberIntro(guild.id, m.id, { kicked: true }); }
+      else if (elapsed >= warn && !db[m.id]?.warned) {
+        updateMemberIntro(guild.id, m.id, { warned: true });
+        const w = await guild.channels.cache.get(config.dynamicVC.introCheckChannelId || config.dynamicVC.introChannelId).send((messagesConfig.introWarnMsg || "⚠️ <@{user}> 期限間近").replace(/{user}/g, m.id).replace(/{leftMinutes}/g, Math.floor((kick - elapsed) / 60000)).replace(/\\n/g, '\n'));
+        updateMemberIntro(guild.id, m.id, { warnMsgId: w.id });
+        setTimeout(() => w.delete().catch(() => { }), kick - elapsed);
+      }
     }
-    if (updated.length) fs.writeFileSync("./introDB.json", JSON.stringify(db, null, 2));
   }, 60000);
 }
 
