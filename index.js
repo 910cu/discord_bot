@@ -357,7 +357,7 @@ async function updateKnockNotifyMessage(vc) {
   const pending = pendingRequests.get(vc.id), applicantIds = pending ? [...pending.keys()] : [];
   if (applicantIds.length === 0) { const id = knockNotifyMsgIds.get(vc.id); if (id) try { await (await vc.messages.fetch(id)).delete(); } catch { } knockNotifyMsgIds.delete(vc.id); return; }
   const embeds = [new EmbedBuilder().setColor(0xf39c12).setTitle("🚪 ノックされています"), ...applicantIds.map(uid => new EmbedBuilder().setColor(0xf39c12).setDescription(`<@${uid}> が入室しようとしています。`).setThumbnail(vc.guild.members.cache.get(uid)?.user.displayAvatarURL() || null))];
-  const rows = applicantIds.slice(0, 5).map(uid => createRow([createBtn(`knock_approve_${vc.id}_${uid}`, "✅ 許可", ButtonStyle.Success), createBtn(`knock_deny_${vc.id}_${uid}`, "❌ 拒否", ButtonStyle.Danger)]));
+  const rows = applicantIds.slice(0, 5).map(uid => createRow([createBtn(`knock_approve_${vc.id}_${uid}`, "✨ 歓迎する", ButtonStyle.Success), createBtn(`knock_deny_${vc.id}_${uid}`, "🤝 お断りする", ButtonStyle.Danger)]));
   const id = knockNotifyMsgIds.get(vc.id); try { if (id) await (await vc.messages.fetch(id)).edit({ embeds, components: rows }); else { const s = await vc.send({ embeds, components: rows }); knockNotifyMsgIds.set(vc.id, s.id); } } catch { }
 }
 
@@ -484,15 +484,15 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     if (cid.startsWith("knock_approve_") || cid.startsWith("knock_deny_")) {
       const [, , vcId, uid] = cid.split("_"), vc = i.guild.channels.cache.get(vcId); if (!vc || vcOwners.get(vcId) !== i.user.id) return i.deferUpdate();
-      await (i.channel.type === ChannelType.DM ? i.update({ content: `✅ ${cid.includes("approve") ? "許可" : "拒否"}しました。`, components: [] }) : i.deferUpdate());
+      await (i.channel.type === ChannelType.DM ? i.update({ content: `✅ ${cid.includes("approve") ? "歓迎" : "お断り"}しました。`, components: [] }) : i.deferUpdate());
       pendingRequests.get(vcId)?.delete(uid);
-      if (cid.includes("approve")) { if (!allowedUsers.has(vcId)) allowedUsers.set(vcId, new Set()); allowedUsers.get(vcId).add(uid); const m = await i.guild.members.fetch(uid).catch(() => null); if (m?.voice.channel) m.voice.setChannel(vc).catch(() => vc.send(`✅ <@${uid}> 入室許可`)); else vc.send(`✅ <@${uid}> 入室許可`).then(msg => setTimeout(() => msg.delete().catch(() => { }), 60000)); }
+      if (cid.includes("approve")) { if (!allowedUsers.has(vcId)) allowedUsers.set(vcId, new Set()); allowedUsers.get(vcId).add(uid); const m = await i.guild.members.fetch(uid).catch(() => null); if (m?.voice.channel) m.voice.setChannel(vc).catch(() => vc.send(`✨ <@${uid}> さん、どうぞお入りください！`)); else vc.send(`✨ <@${uid}> さん、どうぞお入りください！`).then(msg => setTimeout(() => msg.delete().catch(() => { }), 60000)); }
       return updateKnockNotifyMessage(vc);
     }
     if (cid.startsWith("role_assign_")) {
       const [, , uid, mode] = cid.split("_"), member = await i.guild.members.fetch(uid).catch(() => null);
       if (!member) return i.update({ content: "❌ ユーザーが見つかりませんでした。", components: [] });
-      if (mode === "none") return i.update({ content: "✅ 拒否しました。", components: [] });
+      if (mode === "none") return i.update({ content: "✅ お断りしました。", components: [] });
       try { const roleId = g.roles[mode]; if (roleId) await member.roles.add(roleId); await i.update({ content: `✅ <@${uid}> を ${mode === 'male' ? '男性' : '女性'}グループに追加しました！`, components: [] }); } catch (e) { await i.update({ content: `❌ エラー: ${e.message}`, components: [] }); }
     }
   }
