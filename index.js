@@ -157,10 +157,11 @@ function getSettingsPayload(type = "main") {
       desc += "\n";
     });
     embed.setTitle(null).setDescription(desc);
+    const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
     components = [
-      createRow([createBtn("cfg_btn_afk", "💤 AFK"), createBtn("cfg_btn_panel", "🛠️ パネル"), createBtn("cfg_btn_trigger", "➕ 自動作成")]),
-      createRow([createBtn("cfg_btn_intro_kick", "📝 自動整理"), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示")]),
-      createRow([createBtn("cfg_btn_vc", "🚻 部屋制限"), createBtn("config_messages", "💬 メッセージ")])
+      createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_panel", "🛠️ パネル", bStyle("vcPanelEnabled")), createBtn("cfg_btn_trigger", "➕ 自動作成", bStyle("vcCreationEnabled"))]),
+      createRow([createBtn("cfg_btn_intro_kick", "📝 自動整理", bStyle("introKickEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled"))]),
+      createRow([createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled")), createBtn("config_messages", "💬 メッセージ", ButtonStyle.Secondary)])
     ];
   } else {
     const config = {
@@ -184,7 +185,7 @@ function getSettingsPayload(type = "main") {
     }[type];
 
     const isEnabled = features[config.feature];
-    const statusLabel = isEnabled ? `【 ${on} 有効 】` : `【 ${off} 無効 】`;
+    const statusLabel = isEnabled ? "` 🟢 有効 `" : "` 🔴 無効 `";
     const cleanedDesc = config.desc.replace(/`未設定`/g, "`未設定` 🟥");
     embed.setTitle(config.title).setDescription(`${statusLabel}\n\n${cleanedDesc}`);
     const row1Btns = [createBtn(config.toggle, `${config.label}: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger)];
