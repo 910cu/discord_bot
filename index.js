@@ -108,7 +108,7 @@ async function getGuildConfig(gid, forceRefresh = false) {
   if (!forceRefresh && guildCache.has(gid)) return guildCache.get(gid);
 
   let g = await Guild.findOne({ guildId: gid });
-  
+
   // 既存データがない、または機能設定が完全に空の場合に移行/初期化を試みる
   const isNewOrEmpty = !g || (!g.features || Object.keys(g.features).length === 0);
 
@@ -116,7 +116,7 @@ async function getGuildConfig(gid, forceRefresh = false) {
     try {
       const local = require("./config.json");
       const msgs = fs.existsSync("./messages.json") ? JSON.parse(fs.readFileSync("./messages.json", "utf-8")) : defaultMessages;
-      
+
       const initialData = {
         guildId: gid,
         dynamicVC: { ...defaultDynamicVC, ...local.dynamicVC },
@@ -139,11 +139,11 @@ async function getGuildConfig(gid, forceRefresh = false) {
   }
 
   if (!g) {
-    g = await Guild.create({ 
-      guildId: gid, 
-      dynamicVC: defaultDynamicVC, 
-      features: defaultFeatures, 
-      messages: defaultMessages 
+    g = await Guild.create({
+      guildId: gid,
+      dynamicVC: defaultDynamicVC,
+      features: defaultFeatures,
+      messages: defaultMessages
     });
   }
   guildCache.set(gid, g);
@@ -172,7 +172,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
   const roles = g.roles || {};
   const features = { ...defaultFeatures, ...(g.features || {}) };
   const messages = g.messages || {};
-  
+
   const guild = client.guilds.cache.get(gid);
   const guildName = guild ? guild.name : "Unknown Server";
 
@@ -234,12 +234,16 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       desc += "\n";
     });
     embed.setTitle(null).setDescription(desc);
-    const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
     components = [
-      createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_panel", "🛠️ パネル", bStyle("vcPanelEnabled")), createBtn("cfg_btn_trigger", "➕ 自動作成", bStyle("vcCreationEnabled"))]),
-      createRow([createBtn("cfg_btn_intro_kick", "📝 自動整理", bStyle("introKickEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled"))]),
-      createRow([createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled")), createBtn("config_messages", "💬 メッセージ", ButtonStyle.Secondary), createBtn("cfg_btn_raw", "📄 データ", ButtonStyle.Primary)]),
-      createRow([createBtn("cfg_btn_restart", "🔄 ボット再起動", ButtonStyle.Danger), createBtn("cfg_btn_refresh", "♻️ パネル再送", ButtonStyle.Secondary)])
+      createRow([createBtn("cfg_btn_panel", "🛠️ パネル設定", ButtonStyle.Secondary), createBtn("cfg_btn_trigger", "➕ 自動作成", ButtonStyle.Secondary), createBtn("cfg_btn_intro_kick", "📝 自動整理", ButtonStyle.Secondary)]),
+      createRow([createBtn("cfg_btn_vc_features", "🎙️ VC内機能", ButtonStyle.Primary), createBtn("config_messages", "💬 メッセージ", ButtonStyle.Secondary)])
+    ];
+  } else if (type === "vc_features") {
+    const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
+    embed.setTitle("🎙️ VC内機能設定").setDescription("各VC内機能の詳細設定や有効化・無効化が行えます。\n\n- 💤 **AFK (寝落ち)**\n- 🖼️ **自己紹介表示**\n- 🚻 **部屋制限 (性別ロール)**");
+    components = [
+      createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled")), createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled"))]),
+      createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else {
     const configs = {
@@ -279,7 +283,8 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       const menu = s.role ? new RoleSelectMenuBuilder() : new ChannelSelectMenuBuilder().setChannelTypes(s.type);
       components.push(createRow([menu.setCustomId(s.id).setPlaceholder(isEnabled ? s.ph : "⛔ 無効なため設定不可").setDisabled(!isEnabled)]));
     });
-    components.push(createRow([createBtn("cfg_back_main", "⬅️ 戻る")]));
+    const backId = ["afk", "intro_display", "vc"].includes(type) ? "cfg_btn_vc_features" : "cfg_back_main";
+    components.push(createRow([createBtn(backId, "⬅️ 戻る")]));
   }
   return { embeds: [embed], components, ephemeral: true };
 }
@@ -289,8 +294,8 @@ async function setupSettingsPanel(gid, config = null) {
   const g = config || await getGuildConfig(gid);
   const SETTINGS_CHANNEL_ID = g.dynamicVC?.createPanelChannelId || "1496141555705319445"; // fallback
   const channel = client.channels.cache.get(SETTINGS_CHANNEL_ID); if (!channel) return;
-  try { 
-    const msgs = await channel.messages.fetch({ limit: 50 }); 
+  try {
+    const msgs = await channel.messages.fetch({ limit: 50 });
     const toDelete = msgs.filter(m => m.author.id === client.user.id);
     if (toDelete.size > 0) {
       if (channel.type === ChannelType.GuildText) {
@@ -460,7 +465,8 @@ client.on(Events.InteractionCreate, async (i) => {
     if (toggles[cid]) {
       const key = toggles[cid];
       const newFeatures = { ...g.features, [key]: !g.features[key] };
-      const nextType = cid.replace("toggle_", "").replace("gender", "vc").replace("vc_creation", "trigger").replace("vc_intro", "intro_display");
+      let nextType = cid.replace("toggle_", "").replace("gender", "vc").replace("vc_creation", "trigger").replace("vc_intro", "intro_display");
+      if (["afkEnabled", "vcIntroDisplayEnabled", "genderRoleEnabled"].includes(key)) nextType = key.replace("Enabled", "").replace("vcIntroDisplay", "intro_display").replace("genderRole", "vc");
       await updateGuildConfig(gid, { $set: { features: newFeatures } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, nextType, updatedG));
@@ -642,7 +648,7 @@ client.on(Events.MessageDelete, m => handleIntroUpdate(m, "delete"));
 // ─── 起動処理 ────────────────────────────────────────────────────────────────
 client.once(Events.ClientReady, async () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
-  
+
   // スラッシュコマンドの登録 (全サーバー一括)
   const rest = new REST({ version: "10" }).setToken(token);
   try {
