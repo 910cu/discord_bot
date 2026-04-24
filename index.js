@@ -35,8 +35,15 @@ const client = new Client({
   ],
 });
 
-// ─── 設定管理 ──────────────────────────────────────────────────────────────
+// ─── データベース & 設定管理 (メモリキャッシュ) ──────────────────────────────────
 const GUILD_CONFIG_PATH = "./guildConfigs.json";
+const INTRO_DB_PATH = "./introDB.json";
+const MSG_CONFIG_PATH = "./messages.json";
+
+let guildConfigs = {};
+let introDB = {};
+let messagesConfig = {};
+
 const DEFAULT_CONFIG = {
   dynamicVC: {
     triggerChannelId: null,
@@ -65,47 +72,45 @@ const DEFAULT_CONFIG = {
   settingsChannelId: null
 };
 
-function getGuildConfigs() {
-  if (!fs.existsSync(GUILD_CONFIG_PATH)) fs.writeFileSync(GUILD_CONFIG_PATH, JSON.stringify({}, null, 2));
-  return JSON.parse(fs.readFileSync(GUILD_CONFIG_PATH, "utf-8"));
+// 初期ロード関数
+function initData() {
+  if (fs.existsSync(GUILD_CONFIG_PATH)) {
+    try { guildConfigs = JSON.parse(fs.readFileSync(GUILD_CONFIG_PATH, "utf-8")); } catch { guildConfigs = {}; }
+  }
+  if (fs.existsSync(INTRO_DB_PATH)) {
+    try { introDB = JSON.parse(fs.readFileSync(INTRO_DB_PATH, "utf-8")); } catch { introDB = {}; }
+  }
+  loadMessages();
+}
+
+function saveGuildConfigs() {
+  fs.writeFileSync(GUILD_CONFIG_PATH, JSON.stringify(guildConfigs, null, 2));
+}
+
+function saveIntroDB() {
+  fs.writeFileSync(INTRO_DB_PATH, JSON.stringify(introDB, null, 2));
 }
 
 function getGuildConfig(guildId) {
-  const configs = getGuildConfigs();
-  if (!configs[guildId]) {
-    configs[guildId] = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-    saveGuildConfig(guildId, configs[guildId]);
+  if (!guildConfigs[guildId]) {
+    guildConfigs[guildId] = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+    saveGuildConfigs();
   }
-  configs[guildId].features = configs[guildId].features || { ...DEFAULT_CONFIG.features };
-  configs[guildId].dynamicVC = configs[guildId].dynamicVC || { ...DEFAULT_CONFIG.dynamicVC };
-  configs[guildId].roles = configs[guildId].roles || { ...DEFAULT_CONFIG.roles };
-  return configs[guildId];
+  // 階層構造の欠落を補完
+  guildConfigs[guildId].features = guildConfigs[guildId].features || { ...DEFAULT_CONFIG.features };
+  guildConfigs[guildId].dynamicVC = guildConfigs[guildId].dynamicVC || { ...DEFAULT_CONFIG.dynamicVC };
+  guildConfigs[guildId].roles = guildConfigs[guildId].roles || { ...DEFAULT_CONFIG.roles };
+  return guildConfigs[guildId];
 }
 
-function saveGuildConfig(guildId, config) {
-  const configs = getGuildConfigs();
-  configs[guildId] = config;
-  fs.writeFileSync(GUILD_CONFIG_PATH, JSON.stringify(configs, null, 2));
-}
-
-// ─── データベース管理 (introDB) ────────────────────────────────────────────────
-const INTRO_DB_PATH = "./introDB.json";
-function getIntroDB() {
-  if (!fs.existsSync(INTRO_DB_PATH)) fs.writeFileSync(INTRO_DB_PATH, JSON.stringify({}, null, 2));
-  return JSON.parse(fs.readFileSync(INTRO_DB_PATH, "utf-8"));
-}
-function saveIntroDB(db) {
-  fs.writeFileSync(INTRO_DB_PATH, JSON.stringify(db, null, 2));
-}
 function getMemberIntro(guildId, userId) {
-  const db = getIntroDB();
-  return db[guildId]?.[userId] || null;
+  return introDB[guildId]?.[userId] || null;
 }
+
 function updateMemberIntro(guildId, userId, data) {
-  const db = getIntroDB();
-  if (!db[guildId]) db[guildId] = {};
-  db[guildId][userId] = { ...(db[guildId][userId] || {}), ...data };
-  saveIntroDB(db);
+  if (!introDB[guildId]) introDB[guildId] = {};
+  introDB[guildId][userId] = { ...(introDB[guildId][userId] || {}), ...data };
+  saveIntroDB();
 }
 
 // ─── メッセージ管理 ──────────────────────────────────────────────────────────
@@ -118,22 +123,23 @@ const defaultMessages = {
   "introKickDM": "サーバー参加後、指定された期間内に自己紹介の記入がなかったため、サーバーから自動退出となりました。"
 };
 
-let messagesConfig = {};
-const msgConfigPath = "./messages.json";
 function loadMessages() {
-  if (fs.existsSync(msgConfigPath)) {
-    messagesConfig = JSON.parse(fs.readFileSync(msgConfigPath, "utf-8"));
-    let updated = false;
-    for (const [key, val] of Object.entries(defaultMessages)) { if (messagesConfig[key] === undefined) { messagesConfig[key] = val; updated = true; } }
-    if (updated) fs.writeFileSync(msgConfigPath, JSON.stringify(messagesConfig, null, 2));
+  if (fs.existsSync(MSG_CONFIG_PATH)) {
+    try {
+      messagesConfig = JSON.parse(fs.readFileSync(MSG_CONFIG_PATH, "utf-8"));
+      let updated = false;
+      for (const [key, val] of Object.entries(defaultMessages)) { if (messagesConfig[key] === undefined) { messagesConfig[key] = val; updated = true; } }
+      if (updated) fs.writeFileSync(MSG_CONFIG_PATH, JSON.stringify(messagesConfig, null, 2));
+    } catch { messagesConfig = { ...defaultMessages }; }
   } else {
     messagesConfig = { ...defaultMessages };
-    fs.writeFileSync(msgConfigPath, JSON.stringify(messagesConfig, null, 2));
+    fs.writeFileSync(MSG_CONFIG_PATH, JSON.stringify(messagesConfig, null, 2));
   }
 }
-loadMessages();
 
-// ─── 状態管理 ────────────────────────────────────────────────────────────────
+initData();
+
+// ─── 状態管理 (実行時) ────────────────────────────────────────────────────────
 const tempChannels = new Set(), controlPanelMsgIds = new Map(), memberBios = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), renameTimestamps = new Map();
 
 const canRename = (vcId) => {
@@ -278,7 +284,7 @@ function bumpPanelVersion(guildId) {
   config.meta = config.meta || { version: 0, lastUpdated: null };
   config.meta.version = (config.meta.version || 0) + 1;
   config.meta.lastUpdated = new Date().toISOString();
-  saveGuildConfig(guildId, config);
+  saveGuildConfigs();
   return config.meta;
 }
 
@@ -288,7 +294,7 @@ async function setupSettingsPanel(guildId, channelId = null) {
   if (!targetChannelId) return;
   const channel = client.channels.cache.get(targetChannelId);
   if (!channel) return;
-  if (channelId) { config.settingsChannelId = channelId; saveGuildConfig(guildId, config); }
+  if (channelId) { config.settingsChannelId = channelId; saveGuildConfigs(); }
   try { const msgs = await channel.messages.fetch({ limit: 10 }); for (const m of msgs.filter(m => m.author.id === client.user.id).values()) await m.delete().catch(() => { }); } catch { }
   const meta = bumpPanelVersion(guildId), payload = getSettingsPayload(guildId, "main");
   payload.embeds[0].setFooter({ text: `Last Updated: ${new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}` });
@@ -393,7 +399,7 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("cfg_btn_")) return i.update(getSettingsPayload(i.guildId, cid.replace("cfg_btn_", "")));
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled" };
     if (toggles[cid]) {
-      const key = toggles[cid]; config.features[key] = !config.features[key]; saveGuildConfig(i.guildId, config);
+      const key = toggles[cid]; config.features[key] = !config.features[key]; saveGuildConfigs();
       if (key === "genderRoleEnabled" && !config.features[key]) { for (const id of tempChannels) { if (genderMode.has(id)) { genderMode.delete(id); const vc = client.channels.cache.get(id); if (vc) vc.permissionOverwrites.set([{ id: vc.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }]).catch(() => { }); } } }
       await i.update(getSettingsPayload(i.guildId, cid.replace("toggle_", "").replace("gender", "vc").replace("vc_creation", "trigger").replace("vc_intro", "intro_display")));
       return setupSettingsPanel(i.guildId);
@@ -444,9 +450,9 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("rename_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("rename_modal_", "")); await silentReply(i); if (vc) await updateVcName(vc, i.fields.getTextInputValue("name").trim()); }
     if (cid === "intro_time_modal") {
       const w = parseInt(i.fields.getTextInputValue("warn")), k = parseInt(i.fields.getTextInputValue("kick"));
-      if (!isNaN(w) && !isNaN(k)) { config.dynamicVC.introWarnMinutes = w; config.dynamicVC.introKickMinutes = k; saveGuildConfig(i.guildId, config); await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(i.guildId); }
+      if (!isNaN(w) && !isNaN(k)) { config.dynamicVC.introWarnMinutes = w; config.dynamicVC.introKickMinutes = k; saveGuildConfigs(); await i.update({ content: "✅ 更新しました", embeds: [], components: [] }); setupSettingsPanel(i.guildId); }
     }
-    if (cid.startsWith("msg_submit_")) { const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"]; keys.forEach(k => { messagesConfig[k] = i.fields.getTextInputValue(k).replace(/\n/g, '\\n'); }); fs.writeFileSync(msgConfigPath, JSON.stringify(messagesConfig, null, 2)); return i.reply({ content: "✅ 更新完了", ephemeral: true }); }
+    if (cid.startsWith("msg_submit_")) { const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"]; keys.forEach(k => { messagesConfig[k] = i.fields.getTextInputValue(k).replace(/\n/g, '\\n'); }); fs.writeFileSync(MSG_CONFIG_PATH, JSON.stringify(messagesConfig, null, 2)); return i.reply({ content: "✅ 更新完了", ephemeral: true }); }
     if (cid.startsWith("bio_modal_")) { const bio = i.fields.getTextInputValue("bio").trim(); await silentReply(i); if (bio) memberBios.set(i.user.id, bio); else memberBios.delete(i.user.id); }
   }
 
@@ -454,7 +460,7 @@ client.on(Events.InteractionCreate, async (i) => {
     const config = getGuildConfig(i.guildId);
     const field = i.customId.replace("select_cfg_", ""), val = i.values[0], map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", introcheck: "introCheckChannelId", introsource: "introSourceChannelId" };
     if (map[field]) { config.dynamicVC[map[field]] = val; } else { config.roles[field] = val; }
-    saveGuildConfig(i.guildId, config);
+    saveGuildConfigs();
     let category = "main";
     if (["afk", "panel", "trigger", "trigger4", "trigger5"].includes(field)) category = field.startsWith("trigger") ? "trigger" : field;
     else if (field === "introcheck") category = "intro_kick";
@@ -573,10 +579,9 @@ async function syncIntrosOnly(guild) {
     let authors = new Map(), last = null; while (true) { const msgs = await ch.messages.fetch({ limit: 100, before: last }).catch(() => new Map()); if (msgs.size === 0) break; msgs.forEach(m => { if (!m.author.bot && !authors.has(m.author.id)) authors.set(m.author.id, (m.content + (m.attachments.size ? "\n" + m.attachments.map(a => a.url).join("\n") : "")).trim()); }); last = msgs.last().id; if (msgs.size < 100) break; } return authors;
   };
   const checks = await fetchAll(checkCh), sources = checkCh.id === sourceCh.id ? checks : await fetchAll(sourceCh);
-  const db = getIntroDB(); if (!db[guild.id]) db[guild.id] = {};
-  checks.forEach((_, uid) => { if (!db[guild.id][uid]) db[guild.id][uid] = {}; db[guild.id][uid].introduced = true; });
-  sources.forEach((content, uid) => { if (!db[guild.id][uid]) db[guild.id][uid] = {}; db[guild.id][uid].content = content; });
-  saveIntroDB(db);
+  checks.forEach((_, uid) => { if (!introDB[guild.id]) introDB[guild.id] = {}; if (!introDB[guild.id][uid]) introDB[guild.id][uid] = {}; introDB[guild.id][uid].introduced = true; });
+  sources.forEach((content, uid) => { if (!introDB[guild.id]) introDB[guild.id] = {}; if (!introDB[guild.id][uid]) introDB[guild.id][uid] = {}; introDB[guild.id][uid].content = content; });
+  saveIntroDB();
 }
 
 async function syncAndCheckIntros(guild) {
@@ -584,7 +589,7 @@ async function syncAndCheckIntros(guild) {
   setInterval(async () => {
     const config = getGuildConfig(guild.id);
     if (!config.features.introKickEnabled) return;
-    const db = getIntroDB()[guild.id] || {};
+    const db = introDB[guild.id] || {};
     const members = await guild.members.fetch(), now = Date.now();
     for (const m of members.values()) {
       if (m.user.bot || db[m.id]?.introduced) continue;
@@ -602,15 +607,12 @@ async function syncAndCheckIntros(guild) {
 
 client.once(Events.ClientReady, async () => {
   deployCommands();
-  const configs = getGuildConfigs();
-  for (const guildId of Object.keys(configs)) {
+  for (const guildId of Object.keys(guildConfigs)) {
     try {
       const guild = await client.guilds.fetch(guildId);
-      const config = configs[guildId];
-      // Re-populate tempChannels
+      const config = guildConfigs[guildId];
       if (config.dynamicVC.cleanupCategoryId) {
         const channels = await guild.channels.fetch();
-        // Exclude triggers from tempChannels to prevent accidental deletion
         const triggers = [config.dynamicVC.triggerChannelId, config.dynamicVC.triggerChannelId4, config.dynamicVC.triggerChannelId5].filter(Boolean);
         channels.filter(c => c.type === ChannelType.GuildVoice && c.parentId === config.dynamicVC.cleanupCategoryId && !triggers.includes(c.id)).forEach(c => tempChannels.add(c.id));
       }
