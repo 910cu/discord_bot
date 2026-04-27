@@ -102,7 +102,8 @@ const defaultDynamicVC = {
   channelName4: "雑談4人部屋",
   channelName5: "雑談5人部屋",
   introWarnMinutes: 2880,
-  introKickMinutes: 4320
+  introKickMinutes: 4320,
+  autoDeleteMinutes: 5
 };
 
 async function getGuildConfig(gid, forceRefresh = false) {
@@ -192,11 +193,12 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     let subDesc = "### 📺 チャンネル機能設定\nボットの根幹となるチャンネル関連の機能設定です。\n\n";
     subDesc += `**🎫 VC作成チャンネル** [ ${fStatus("vcPanelEnabled")} ]\n┕ 設置先: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**➕ ＶＣチャンネル自動作成** [ ${fStatus("vcCreationEnabled")} ]\n┕ 自由枠: ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定` 🟥"}\n\n`;
-    subDesc += `**🛂 入国審査 (自動整理)** [ ${fStatus("introKickEnabled")} ]\n┕ 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定` 🟥"}\n`;
+    subDesc += `**🛂 入国審査 (自動整理)** [ ${fStatus("introKickEnabled")} ]\n┕ 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定` 🟥"}\n\n`;
+    subDesc += `**⏱️ 空室削除タイマー**: ${dynamicVC.autoDeleteMinutes || 5}分\n`;
     embed.setTitle(null).setDescription(subDesc);
     components = [
       createRow([createBtn("cfg_btn_panel", "🎫 作成パネル", ButtonStyle.Secondary), createBtn("cfg_btn_trigger", "➕ 自動作成", ButtonStyle.Secondary), createBtn("cfg_btn_intro_kick", "🛂 入国審査", ButtonStyle.Secondary)]),
-      createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
+      createRow([createBtn("cfg_btn_auto_delete", "⏱️ 削除設定", ButtonStyle.Secondary), createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else if (type === "vc_features") {
     const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
@@ -279,7 +281,7 @@ async function setupSettingsPanel(gid, config = null) {
 
   const payload = await getSettingsPayload(gid, "main", g);
   payload.embeds[0].setFooter({ text: `Last Updated: ${new Date(meta.lastUpdated).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}` });
-  await channel.send(payload);
+  await channel.send({ ...payload, flags: [MessageFlags.SuppressNotifications] });
 }
 
 async function setupCreatePanel(gid) {
@@ -435,6 +437,7 @@ client.on(Events.InteractionCreate, async (i) => {
       if (g.dynamicVC.introSourceChannelId) await scan(g.dynamicVC.introSourceChannelId, true);
       return i.followUp({ content: `✅ 復元が完了しました！\n- 提出ステータス: ${statusCount} 件\n- 自己紹介本文: ${contentCount} 件\nをデータベースに保存しました。`, ephemeral: true });
     }
+    if (cid === "cfg_btn_auto_delete") return i.showModal(new ModalBuilder().setCustomId("auto_delete_modal").setTitle("削除タイマー設定").addComponents(createRow([new TextInputBuilder().setCustomId("minutes").setLabel("空室削除までの時間 (分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.autoDeleteMinutes || 5)).setRequired(true)])));
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", ""), g));
 
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled" };
@@ -494,8 +497,9 @@ client.on(Events.InteractionCreate, async (i) => {
         const vc = await i.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId, userLimit: limit, permissionOverwrites: [{ id: i.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
         tempChannels.add(vc.id); vcOwners.set(vc.id, i.user.id); if (limit) limitLockedVCs.add(vc.id);
         await sendOrUpdateControlPanel(vc);
-        // 5分間誰も入らなければ削除
-        setTimeout(() => checkAndCleanupVC(vc.id), 5 * 60 * 1000);
+        // 設定された時間（デフォルト5分）誰も入らなければ削除
+        const delMin = g.dynamicVC.autoDeleteMinutes || 5;
+        setTimeout(() => checkAndCleanupVC(vc.id), delMin * 60 * 1000);
       } catch { }
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
@@ -521,6 +525,15 @@ client.on(Events.InteractionCreate, async (i) => {
       const newMsgs = { ...g.messages }; keys.forEach(k => { newMsgs[k] = i.fields.getTextInputValue(k).replace(/\n/g, '\\n'); });
       await updateGuildConfig(gid, { $set: { messages: newMsgs } });
       return i.reply({ content: "✅ 更新完了", ephemeral: true });
+    }
+    if (cid === "auto_delete_modal") {
+      const m = parseInt(i.fields.getTextInputValue("minutes"));
+      if (!isNaN(m)) {
+        await updateGuildConfig(gid, { $set: { "dynamicVC.autoDeleteMinutes": m } });
+        const updatedG = await getGuildConfig(gid, true);
+        await i.update(await getSettingsPayload(gid, "ch_features", updatedG));
+        await setupSettingsPanel(gid, updatedG);
+      }
     }
   }
 
@@ -566,8 +579,9 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
       tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id);
       await n.member.voice.setChannel(vc);
       await sendOrUpdateControlPanel(vc);
-      // 念のため5分タイマー（移動に失敗した場合など）
-      setTimeout(() => checkAndCleanupVC(vc.id), 5 * 60 * 1000);
+      // 設定された時間（デフォルト5分）タイマー
+      const delMin = g.dynamicVC.autoDeleteMinutes || 5;
+      setTimeout(() => checkAndCleanupVC(vc.id), delMin * 60 * 1000);
     } catch { }
     return;
   }
@@ -576,7 +590,19 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     if (g.features.genderRoleEnabled && gender && vcOwners.get(vc.id) !== m.id && !m.roles.cache.has(g.roles[gender])) {
       try { await m.voice.disconnect(); m.send((g.messages[gender === 'male' ? 'genderMaleOnlyDM' : 'genderFemaleOnlyDM'] || "").replace(/{vcName}/g, vc.name).replace(/\\n/g, '\n')).catch(() => { }); } catch { } return;
     }
-    if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== m.id && !allowedUsers.get(vc.id)?.has(m.id)) { try { await m.voice.disconnect(); } catch { } return; }
+    if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== m.id && !allowedUsers.get(vc.id)?.has(m.id)) {
+      try {
+        await m.voice.disconnect();
+        // 自動ノック
+        if (!pendingRequests.has(vc.id)) pendingRequests.set(vc.id, new Map());
+        if (!pendingRequests.get(vc.id).has(m.id)) {
+          pendingRequests.get(vc.id).set(m.id, true);
+          await updateKnockNotifyMessage(vc);
+          m.send(`🔒 **${vc.name}** はロックされています。入室申請を送信しました。部屋主の承認をお待ちください。`).catch(() => { });
+        }
+      } catch { }
+      return;
+    }
     if (o.channelId !== n.channelId && g.features.vcIntroDisplayEnabled) {
       const bio = await Intro.findOne({ guildId: gid, userId: m.id });
       if (bio?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } }
