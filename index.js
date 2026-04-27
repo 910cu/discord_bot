@@ -228,7 +228,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
         ], back: "ch_features"
       },
       intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), extraBtn3: createBtn("cfg_intro_list", "📋 承認済みリスト", ButtonStyle.Secondary), select: { id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, back: "ch_features" },
-      intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択", type: [ChannelType.GuildText] }, back: "vc_features" },
+      intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelIds?.length > 0 ? dynamicVC.introSourceChannelIds.map(id => `<#${id}>`).join(", ") : (dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥")}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択 (複数可)", type: [ChannelType.GuildText], multi: true }, back: "vc_features" },
       vc: {
         title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n\nVCオーナーが部屋のロックや性別制限を行えるようにします。`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限", selects: [
           { id: "select_cfg_male", ph: "♂️ 男性ロールを選択", role: true },
@@ -249,6 +249,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
 
     (configs.selects || [configs.select]).filter(Boolean).forEach(s => {
       const menu = s.role ? new RoleSelectMenuBuilder() : new ChannelSelectMenuBuilder().setChannelTypes(s.type);
+      if (s.multi) menu.setMaxValues(25);
       components.push(createRow([menu.setCustomId(s.id).setPlaceholder(isEnabled ? s.ph : "⛔ 無効なため設定不可").setDisabled(!isEnabled)]));
     });
     const backId = configs.back ? `cfg_btn_${configs.back}` : "cfg_back_main";
@@ -474,7 +475,8 @@ client.on(Events.InteractionCreate, async (i) => {
         }
       };
       if (g.dynamicVC.introCheckChannelId) await scan(g.dynamicVC.introCheckChannelId, false);
-      if (g.dynamicVC.introSourceChannelId) await scan(g.dynamicVC.introSourceChannelId, true);
+      const sources = g.dynamicVC.introSourceChannelIds || (g.dynamicVC.introSourceChannelId ? [g.dynamicVC.introSourceChannelId] : []);
+      for (const sid of sources) await scan(sid, true);
       return i.followUp({ content: `✅ 復元が完了しました！\n- 提出ステータス: ${statusCount} 件\n- 自己紹介本文: ${contentCount} 件\nをデータベースに保存しました。`, ephemeral: true });
     }
     if (cid === "cfg_intro_list") {
@@ -657,7 +659,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
 // ─── 自己紹介管理 ──────────────────────────────────────────────────────────
 async function syncIntroHistory(gid) {
   const g = await getGuildConfig(gid);
-  const checkChId = g.dynamicVC.introCheckChannelId, sourceChId = g.dynamicVC.introSourceChannelId;
+  const checkChId = g.dynamicVC.introCheckChannelId, sourceChIds = g.dynamicVC.introSourceChannelIds || (g.dynamicVC.introSourceChannelId ? [g.dynamicVC.introSourceChannelId] : []);
   const guild = client.guilds.cache.get(gid); if (!guild) return;
 
   const scan = async (cid, isSource) => {
@@ -676,7 +678,7 @@ async function syncIntroHistory(gid) {
     }
   };
   if (checkChId) await scan(checkChId, false);
-  if (sourceChId) await scan(sourceChId, true);
+  for (const sid of sourceChIds) await scan(sid, true);
   console.log(`🔄 Guild ${gid}: チャンネル履歴からの同期が完了しました。`);
 }
 
@@ -684,16 +686,17 @@ const handleIntroUpdate = async (msg, type = "create") => {
   if (msg.author?.bot) return;
   const gid = msg.guildId; if (!gid) return;
   const g = await getGuildConfig(gid);
-  const checkCh = g.dynamicVC.introCheckChannelId, sourceCh = g.dynamicVC.introSourceChannelId;
-  if (![checkCh, sourceCh].includes(msg.channelId)) return;
+  const checkCh = g.dynamicVC.introCheckChannelId, sourceChs = g.dynamicVC.introSourceChannelIds || (g.dynamicVC.introSourceChannelId ? [g.dynamicVC.introSourceChannelId] : []);
+  const isSource = sourceChs.includes(msg.channelId);
+  if (msg.channelId !== checkCh && !isSource) return;
 
   const isDel = type === "delete", uid = msg.author.id;
   if (isDel) {
-    if (msg.channelId === sourceCh) await Intro.updateOne({ guildId: gid, userId: uid }, { $set: { content: "" } });
+    if (isSource) await Intro.updateOne({ guildId: gid, userId: uid }, { $set: { content: "" } });
   } else {
     const introData = { guildId: gid, userId: uid };
     if (msg.channelId === checkCh) introData.introduced = true;
-    if (msg.channelId === sourceCh) introData.content = (msg.content + (msg.attachments.size ? "\n" + msg.attachments.map(a => a.url).join("\n") : "")).trim();
+    if (isSource) introData.content = (msg.content + (msg.attachments.size ? "\n" + msg.attachments.map(a => a.url).join("\n") : "")).trim();
     const bio = await updateIntro(gid, uid, introData);
     if (type === "create" && msg.channelId === checkCh) {
       if (bio.warnMsgId) { try { await (await msg.guild.channels.cache.get(checkCh).messages.fetch(bio.warnMsgId)).delete(); } catch { } await Intro.updateOne({ _id: bio._id }, { $set: { warnMsgId: null } }); }
