@@ -346,6 +346,31 @@ async function updateKnockNotifyMessage(vc) {
   const id = knockNotifyMsgIds.get(vc.id); try { if (id) await (await vc.messages.fetch(id)).edit({ embeds, components: rows }); else { const s = await vc.send({ embeds, components: rows, flags: [MessageFlags.SuppressNotifications] }); knockNotifyMsgIds.set(vc.id, s.id); } } catch { }
 }
 
+async function createDynamicVC(guild, member, name, limit, g) {
+  try {
+    const vc = await guild.channels.create({
+      name,
+      type: ChannelType.GuildVoice,
+      parent: g.dynamicVC?.cleanupCategoryId,
+      userLimit: limit,
+      permissionOverwrites: [
+        { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
+        { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }
+      ]
+    });
+    tempChannels.add(vc.id);
+    vcOwners.set(vc.id, member.id);
+    if (limit) limitLockedVCs.add(vc.id);
+    await sendOrUpdateControlPanel(vc);
+    const delMin = g.dynamicVC.autoDeleteMinutes || 5;
+    setTimeout(() => checkAndCleanupVC(vc.id), delMin * 60 * 1000);
+    return vc;
+  } catch (e) {
+    console.error("VC作成エラー:", e);
+    return null;
+  }
+}
+
 // ─── インタラクション ─────────────────────────────────────────────────────
 client.on(Events.InteractionCreate, async (i) => {
   if (i.isChatInputCommand()) {
@@ -370,11 +395,18 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("create_vc_")) {
       if (!g.features.vcPanelEnabled) return i.reply({ content: "無効です", ephemeral: true });
       const limit = cid === "create_vc_4" ? 4 : cid === "create_vc_5" ? 5 : 0;
-      let defaultName = `${i.member.displayName}のVC`;
-      if (limit === 4) defaultName = g.dynamicVC.channelName4 || "雑談4人部屋";
-      else if (limit === 5) defaultName = g.dynamicVC.channelName5 || "雑談5人部屋";
-      else if (g.dynamicVC.channelName) defaultName = g.dynamicVC.channelName.replace("{user}", i.member.displayName);
       
+      if (limit > 0) {
+        // 4人部屋・5人部屋は名前固定で即時作成
+        const name = limit === 4 ? (g.dynamicVC.channelName4 || "雑談4人部屋") : (g.dynamicVC.channelName5 || "雑談5人部屋");
+        await i.deferReply({ ephemeral: true });
+        const vc = await createDynamicVC(i.guild, i.member, name, limit, g);
+        if (vc) return i.editReply({ content: `✅ **${vc.name}** を作成しました。` });
+        return i.editReply({ content: "❌ VCの作成に失敗しました。" });
+      }
+
+      // 自由枠はモーダルを表示
+      let defaultName = g.dynamicVC.channelName ? g.dynamicVC.channelName.replace("{user}", i.member.displayName) : `${i.member.displayName}のVC`;
       return i.showModal(new ModalBuilder().setCustomId(`create_vc_modal_${limit}`).setTitle("VC作成").addComponents(createRow([new TextInputBuilder().setCustomId("name").setLabel("名前").setStyle(TextInputStyle.Short).setValue(defaultName).setRequired(true)])));
     }
     if (cid === "vc_toggle_lock") {
@@ -506,15 +538,9 @@ client.on(Events.InteractionCreate, async (i) => {
   if (i.isModalSubmit()) {
     const cid = i.customId;
     if (cid.startsWith("create_vc_modal_")) {
-      const name = i.fields.getTextInputValue("name"), limit = parseInt(cid.split("_")[3]); await silentReply(i);
-      try {
-        const vc = await i.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId, userLimit: limit, permissionOverwrites: [{ id: i.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
-        tempChannels.add(vc.id); vcOwners.set(vc.id, i.user.id); if (limit) limitLockedVCs.add(vc.id);
-        await sendOrUpdateControlPanel(vc);
-        // 設定された時間（デフォルト5分）誰も入らなければ削除
-        const delMin = g.dynamicVC.autoDeleteMinutes || 5;
-        setTimeout(() => checkAndCleanupVC(vc.id), delMin * 60 * 1000);
-      } catch { }
+      const name = i.fields.getTextInputValue("name"), limit = parseInt(cid.split("_")[3]);
+      await silentReply(i);
+      await createDynamicVC(i.guild, i.member, name, limit, g);
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
     if (cid.startsWith("rename_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("rename_modal_", "")); await silentReply(i); if (vc) await updateVcName(vc, i.fields.getTextInputValue("name").trim()); }
