@@ -716,23 +716,40 @@ client.once(Events.ClientReady, async () => {
 
     // 定期チェック (自己紹介キック)
     setInterval(async () => {
-      const gCurrent = await getGuildConfig(guild.id);
-      if (!gCurrent.features.introKickEnabled) return;
-      const members = await guild.members.fetch();
-      const now = Date.now();
-      for (const m of members.values()) {
-        if (m.user.bot) continue;
-        const bio = await Intro.findOne({ guildId: guild.id, userId: m.id });
-        if (bio?.introduced) continue;
-        const elapsed = now - m.joinedTimestamp, warn = (gCurrent.dynamicVC.introWarnMinutes || 2880) * 60000, kick = (gCurrent.dynamicVC.introKickMinutes || 4320) * 60000;
-        if (elapsed >= kick) { try { await m.send(gCurrent.messages.introKickDM.replace(/\\n/g, '\n')); } catch { } await m.kick("未記入"); await Intro.updateOne({ guildId: guild.id, userId: m.id }, { $set: { kicked: true } }, { upsert: true }); }
-        else if (elapsed >= warn && !bio?.warned) {
-          const w = await guild.channels.cache.get(gCurrent.dynamicVC.introCheckChannelId).send(gCurrent.messages.introWarnMsg.replace(/{user}/g, m.id).replace(/{leftMinutes}/g, Math.floor((kick - elapsed) / 60000)).replace(/\\n/g, '\n'));
-          await updateIntro(guild.id, m.id, { warned: true, warnMsgId: w.id });
-          setTimeout(() => w.delete().catch(() => { }), kick - elapsed);
+      try {
+        const gCurrent = await getGuildConfig(guild.id);
+        if (!gCurrent.features.introKickEnabled) return;
+        const checkChId = gCurrent.dynamicVC.introCheckChannelId;
+        if (!checkChId) return;
+        const checkCh = guild.channels.cache.get(checkChId);
+        if (!checkCh) return;
+
+        const members = await guild.members.fetch();
+        const now = Date.now();
+        for (const m of members.values()) {
+          if (m.user.bot || !m.joinedTimestamp) continue;
+          const bio = await Intro.findOne({ guildId: guild.id, userId: m.id });
+          if (bio?.introduced) continue;
+
+          const elapsed = now - m.joinedTimestamp;
+          const warn = (gCurrent.dynamicVC.introWarnMinutes || 2880) * 60000;
+          const kick = (gCurrent.dynamicVC.introKickMinutes || 4320) * 60000;
+
+          if (elapsed >= kick) {
+            try { await m.send(gCurrent.messages.introKickDM.replace(/\\n/g, '\n')).catch(() => { }); } catch { }
+            await m.kick("自己紹介未記入による自動退出").catch(() => { });
+            await Intro.updateOne({ guildId: guild.id, userId: m.id }, { $set: { kicked: true } }, { upsert: true });
+          }
+          else if (elapsed >= warn && !bio?.warned) {
+            try {
+              const w = await checkCh.send(gCurrent.messages.introWarnMsg.replace(/{user}/g, m.id).replace(/{leftMinutes}/g, Math.floor((kick - elapsed) / 60000)).replace(/\\n/g, '\n'));
+              await updateIntro(guild.id, m.id, { warned: true, warnMsgId: w.id });
+              setTimeout(() => w.delete().catch(() => { }), Math.max(0, kick - elapsed));
+            } catch (e) { console.error(`[KickWarn] Error in ${guild.name}:`, e.message); }
+          }
         }
-      }
-    }, 60000);
+      } catch (err) { console.error(`[IntroKick] Error in ${guild.id}:`, err); }
+    }, 30000); // 30秒ごとにチェック
   }
 });
 
