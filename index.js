@@ -230,7 +230,9 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), extraBtn3: createBtn("cfg_intro_list", "📋 承認済みリスト", ButtonStyle.Secondary), select: { id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, back: "ch_features" },
       intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelIds?.length > 0 ? dynamicVC.introSourceChannelIds.map(id => `<#${id}>`).join(", ") : (dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥")}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択 (複数可)", type: [ChannelType.GuildText], multi: true }, back: "vc_features" },
       vc: {
-        title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n\nVCオーナーが部屋のロックや性別制限を行えるようにします。`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限", selects: [
+        title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n\nVCオーナーが部屋のロックや性別制限を行えるようにします。`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限", 
+        extraBtn: createBtn("config_roles_id", "🆔 IDで設定", ButtonStyle.Primary),
+        selects: [
           { id: "select_cfg_male", ph: "♂️ 男性ロールを選択", role: true },
           { id: "select_cfg_female", ph: "♀️ 女性ロールを選択", role: true }
         ], back: "vc_features"
@@ -488,6 +490,12 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid === "cfg_btn_auto_delete") return i.showModal(new ModalBuilder().setCustomId("auto_delete_modal").setTitle("削除タイマー設定").addComponents(createRow([new TextInputBuilder().setCustomId("minutes").setLabel("空室削除までの時間 (分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.autoDeleteMinutes || 5)).setRequired(true)])));
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", ""), g));
 
+    if (cid === "config_roles_id") {
+      return i.showModal(new ModalBuilder().setCustomId("roles_id_modal").setTitle("ロールID設定").addComponents(
+        createRow([new TextInputBuilder().setCustomId("male").setLabel("♂️ 男性ロールID").setStyle(TextInputStyle.Short).setValue(g.roles.male || "").setPlaceholder("ロールIDを入力").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("female").setLabel("♀️ 女性ロールID").setStyle(TextInputStyle.Short).setValue(g.roles.female || "").setPlaceholder("ロールIDを入力").setRequired(false)])
+      ));
+    }
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled" };
     if (toggles[cid]) {
       const key = toggles[cid];
@@ -576,6 +584,13 @@ client.on(Events.InteractionCreate, async (i) => {
         await i.update(await getSettingsPayload(gid, "ch_features", updatedG));
         await setupSettingsPanel(gid, updatedG);
       }
+    }
+    if (cid === "roles_id_modal") {
+      const male = i.fields.getTextInputValue("male").trim(), female = i.fields.getTextInputValue("female").trim();
+      await updateGuildConfig(gid, { $set: { "roles.male": male || null, "roles.female": female || null } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "vc", updatedG));
+      await setupSettingsPanel(gid, updatedG);
     }
   }
 
