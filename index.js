@@ -244,7 +244,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     const row1Btns = [createBtn(configs.toggle, `${configs.label}: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger)];
     if (configs.extraBtn) row1Btns.push(configs.extraBtn.setDisabled(!isEnabled));
     if (configs.extraBtn2) row1Btns.push(configs.extraBtn2.setDisabled(!isEnabled));
-    if (configs.extraBtn3) row1Btns.push(configs.extraBtn3.setDisabled(!isEnabled));
+    if (configs.extraBtn3) row1Btns.push(configs.extraBtn3); // 常に有効化
     components.push(createRow(row1Btns));
 
     (configs.selects || [configs.select]).filter(Boolean).forEach(s => {
@@ -594,12 +594,12 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     if (i.customId.startsWith("select_cfg_")) {
-      const field = i.customId.replace("select_cfg_", ""), val = i.values[0];
-      const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", category: "cleanupCategoryId", introcheck: "introCheckChannelId", introsource: "introSourceChannelId" };
-      const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", category: "panel", introcheck: "intro_kick", introsource: "intro_display" };
+      const field = i.customId.replace("select_cfg_", ""), vals = i.values;
+      const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", category: "cleanupCategoryId", introcheck: "introCheckChannelId", introsource: "introSourceChannelIds", male: "male", female: "female" };
+      const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", category: "panel", introcheck: "intro_kick", introsource: "intro_display", male: "vc", female: "vc" };
       const type = typeMap[field] || "vc";
-      if (map[field]) await updateGuildConfig(gid, { $set: { [`dynamicVC.${map[field]}`]: val } });
-      else await updateGuildConfig(gid, { $set: { [`roles.${field}`]: val } });
+      if (field === "male" || field === "female") await updateGuildConfig(gid, { $set: { [`roles.${field}`]: vals[0] } });
+      else if (map[field]) await updateGuildConfig(gid, { $set: { [`dynamicVC.${map[field]}`]: field === "introsource" ? vals : vals[0] } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, type, updatedG));
       await setupSettingsPanel(gid, updatedG); if (field === "panel") await setupCreatePanel(gid);
@@ -679,7 +679,16 @@ async function syncIntroHistory(gid) {
   };
   if (checkChId) await scan(checkChId, false);
   for (const sid of sourceChIds) await scan(sid, true);
-  console.log(`🔄 Guild ${gid}: チャンネル履歴からの同期が完了しました。`);
+  
+  // ロール保持者を承認済みとして同期
+  const members = await guild.members.fetch();
+  for (const m of members.values()) {
+    if (m.roles.cache.has(g.roles.male) || m.roles.cache.has(g.roles.female)) {
+      await Intro.findOneAndUpdate({ guildId: gid, userId: m.id }, { $set: { introduced: true } }, { upsert: true });
+    }
+  }
+  
+  console.log(`🔄 Guild ${gid}: チャンネル履歴およびロールからの同期が完了しました。`);
 }
 
 const handleIntroUpdate = async (msg, type = "create") => {
@@ -769,6 +778,13 @@ client.once(Events.ClientReady, async () => {
         const now = Date.now();
         for (const m of members.values()) {
           if (m.user.bot || !m.joinedTimestamp) continue;
+          
+          // ロールをすでに持っている場合は承認済み扱い
+          if (m.roles.cache.has(gCurrent.roles.male) || m.roles.cache.has(gCurrent.roles.female)) {
+            await Intro.findOneAndUpdate({ guildId: guild.id, userId: m.id }, { $set: { introduced: true } }, { upsert: true });
+            continue;
+          }
+
           const bio = await Intro.findOne({ guildId: guild.id, userId: m.id });
           if (bio?.introduced) continue;
 
