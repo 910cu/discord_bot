@@ -474,6 +474,10 @@ client.on(Events.InteractionCreate, async (i) => {
       console.log("🚀 User requested restart. Exiting...");
       process.exit(0);
     }
+    if (cid.startsWith("vc_join_click_")) {
+      const vid = cid.replace("vc_join_click_", "");
+      return i.reply({ content: `以下のリンクからVCに参加できます：\nhttps://discord.com/channels/${gid}/${vid}`, ephemeral: true });
+    }
     if (cid === "cfg_btn_refresh") {
       await i.reply({ content: "♻️ パネルを再送信しています...", ephemeral: true });
       await setupSettingsPanel(gid, g);
@@ -602,8 +606,8 @@ client.on(Events.InteractionCreate, async (i) => {
       if (mentionInput === "@募集" && g.dynamicVC.recruitmentRoleId) mentionStr = `<@&${g.dynamicVC.recruitmentRoleId}>`;
       else if (!mentionInput.includes("<@") && /^\d+$/.test(mentionInput)) mentionStr = `<@&${mentionInput}>`;
 
-      const text = `【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>\n【一言】\n>>> ${comment}`;
-      const row = createRow([new ButtonBuilder().setLabel("VCに参加する").setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${i.guildId}/${vcId}`)]);
+      const text = `【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>\n\n【一言】\n**${comment}**`;
+      const row = createRow([createBtn(`vc_join_click_${vcId}`, "VCに参加する", ButtonStyle.Success)]);
       await ch.send({ content: text, components: [row] });
       return i.reply({ content: "✅ 募集を投稿しました！", ephemeral: true });
     }
