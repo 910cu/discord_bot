@@ -227,7 +227,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
           { id: "select_cfg_trigger5", ph: "👥 5人部屋トリガーを選択", type: [ChannelType.GuildVoice] }
         ], back: "ch_features"
       },
-      intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, back: "ch_features" },
+      intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), extraBtn3: createBtn("cfg_intro_list", "📋 承認済みリスト", ButtonStyle.Secondary), select: { id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, back: "ch_features" },
       intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定`"}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択", type: [ChannelType.GuildText] }, back: "vc_features" },
       vc: {
         title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n\nVCオーナーが部屋のロックや性別制限を行えるようにします。`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限", selects: [
@@ -244,6 +244,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     const row1Btns = [createBtn(configs.toggle, `${configs.label}: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger)];
     if (configs.extraBtn) row1Btns.push(configs.extraBtn.setDisabled(!isEnabled));
     if (configs.extraBtn2) row1Btns.push(configs.extraBtn2.setDisabled(!isEnabled));
+    if (configs.extraBtn3) row1Btns.push(configs.extraBtn3.setDisabled(!isEnabled));
     components.push(createRow(row1Btns));
 
     (configs.selects || [configs.select]).filter(Boolean).forEach(s => {
@@ -369,7 +370,12 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("create_vc_")) {
       if (!g.features.vcPanelEnabled) return i.reply({ content: "無効です", ephemeral: true });
       const limit = cid === "create_vc_4" ? 4 : cid === "create_vc_5" ? 5 : 0;
-      return i.showModal(new ModalBuilder().setCustomId(`create_vc_modal_${limit}`).setTitle("VC作成").addComponents(createRow([new TextInputBuilder().setCustomId("name").setLabel("名前").setStyle(TextInputStyle.Short).setValue(`${i.member.displayName}のVC`).setRequired(true)])));
+      let defaultName = `${i.member.displayName}のVC`;
+      if (limit === 4) defaultName = g.dynamicVC.channelName4 || "雑談4人部屋";
+      else if (limit === 5) defaultName = g.dynamicVC.channelName5 || "雑談5人部屋";
+      else if (g.dynamicVC.channelName) defaultName = g.dynamicVC.channelName.replace("{user}", i.member.displayName);
+      
+      return i.showModal(new ModalBuilder().setCustomId(`create_vc_modal_${limit}`).setTitle("VC作成").addComponents(createRow([new TextInputBuilder().setCustomId("name").setLabel("名前").setStyle(TextInputStyle.Short).setValue(defaultName).setRequired(true)])));
     }
     if (cid === "vc_toggle_lock") {
       const vc = i.member.voice.channel; if (!vc || !tempChannels.has(vc.id) || vcOwners.get(vc.id) !== i.user.id) return i.deferUpdate();
@@ -438,6 +444,12 @@ client.on(Events.InteractionCreate, async (i) => {
       if (g.dynamicVC.introCheckChannelId) await scan(g.dynamicVC.introCheckChannelId, false);
       if (g.dynamicVC.introSourceChannelId) await scan(g.dynamicVC.introSourceChannelId, true);
       return i.followUp({ content: `✅ 復元が完了しました！\n- 提出ステータス: ${statusCount} 件\n- 自己紹介本文: ${contentCount} 件\nをデータベースに保存しました。`, ephemeral: true });
+    }
+    if (cid === "cfg_intro_list") {
+      const list = await Intro.find({ guildId: gid, introduced: true }).sort({ _id: -1 }).limit(100);
+      if (list.length === 0) return i.reply({ content: "承認済みのユーザーはいません。", ephemeral: true });
+      const desc = list.map(u => `- <@${u.userId}> (\`${u.userId}\`)`).join("\n");
+      return i.reply({ content: `### 📋 承認済みユーザー (最新100件)\n${desc.length > 1900 ? desc.substring(0, 1900) + "\n...その他" : desc}`, ephemeral: true });
     }
     if (cid === "cfg_btn_auto_delete") return i.showModal(new ModalBuilder().setCustomId("auto_delete_modal").setTitle("削除タイマー設定").addComponents(createRow([new TextInputBuilder().setCustomId("minutes").setLabel("空室削除までの時間 (分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.autoDeleteMinutes || 5)).setRequired(true)])));
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", ""), g));
