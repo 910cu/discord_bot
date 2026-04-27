@@ -352,8 +352,9 @@ client.on(Events.InteractionCreate, async (i) => {
     if (i.commandName === "setup") {
       if (!i.member.permissions.has(PermissionFlagsBits.Administrator)) return i.reply({ content: "管理者のみ実行可能です。", ephemeral: true });
       await updateGuildConfig(gid, { $set: { "dynamicVC.settingsChannelId": i.channelId } });
+      const updatedG = await getGuildConfig(gid, true); // 最新設定を強制取得
       await i.reply({ content: "✅ このチャンネルを管理パネル設置先に設定しました。パネルを送信します...", ephemeral: true });
-      return await setupSettingsPanel(gid);
+      return await setupSettingsPanel(gid, updatedG);
     }
     const cmd = client.commands.get(i.commandName);
     if (cmd) cmd.execute(i).catch(console.error);
