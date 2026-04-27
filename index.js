@@ -215,7 +215,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
   } else {
     const configs = {
       afk: { title: "💤 AFK (寝落ち) 設定", desc: `- 💤 移動先: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定`"}\n\n一定時間動きがないユーザーを自動的にAFKチャンネルへ移動させます。`, feature: "afkEnabled", toggle: "toggle_afk", label: "AFK機能", select: { id: "select_cfg_afk", ph: "💤 移動先を選択", type: [ChannelType.GuildVoice] }, back: "vc_features" },
-      panel: { title: "🎫 VC作成チャンネル設定", desc: `- 🎫 設置先: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n\nボタンを押して新しいVCを作成できるパネルを設置します。`, feature: "vcPanelEnabled", toggle: "toggle_panel", label: "作成パネル", select: { id: "select_cfg_panel", ph: "🎫 設置先を選択", type: [ChannelType.GuildText] }, back: "ch_features" },
+      panel: { title: "🎫 VC作成チャンネル設定", desc: `- 🎫 設置先: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n- 📂 作成先カテゴリ: ${dynamicVC.cleanupCategoryId ? `<#${dynamicVC.cleanupCategoryId}>` : "`未設定`"}\n\nボタンを押して新しいVCを作成できるパネルを設置します。`, feature: "vcPanelEnabled", toggle: "toggle_panel", label: "作成パネル", selects: [{ id: "select_cfg_panel", ph: "🎫 設置先を選択", type: [ChannelType.GuildText] }, { id: "select_cfg_category", ph: "📂 作成先カテゴリを選択", type: [ChannelType.GuildCategory] }], back: "ch_features" },
       trigger: {
         title: "➕ ＶＣチャンネル自動作成 設定",
         desc: `- 自由枠 ─ ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"} (\`${dynamicVC.channelName}\`)\n- 4人部屋 ─ ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"} (\`${dynamicVC.channelName4 || "雑談4人部屋"}\`)\n- 5人部屋 ─ ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"} (\`${dynamicVC.channelName5 || "雑談5人部屋"}\`)\n\n特定のチャンネルに入室した際、自動で新しいVCを作成します。`,
@@ -555,8 +555,8 @@ client.on(Events.InteractionCreate, async (i) => {
 
     if (i.customId.startsWith("select_cfg_")) {
       const field = i.customId.replace("select_cfg_", ""), val = i.values[0];
-      const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", introcheck: "introCheckChannelId", introsource: "introSourceChannelId" };
-      const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", introcheck: "intro_kick", introsource: "intro_display" };
+      const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", category: "cleanupCategoryId", introcheck: "introCheckChannelId", introsource: "introSourceChannelId" };
+      const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", category: "panel", introcheck: "intro_kick", introsource: "intro_display" };
       const type = typeMap[field] || "vc";
       if (map[field]) await updateGuildConfig(gid, { $set: { [`dynamicVC.${map[field]}`]: val } });
       else await updateGuildConfig(gid, { $set: { [`roles.${field}`]: val } });
