@@ -484,10 +484,10 @@ client.on(Events.InteractionCreate, async (i) => {
       const vc = i.member.voice.channel; if (!vc || vcOwners.get(vc.id) !== i.user.id) return i.reply({ content: "VCオーナーのみ実行可能です。", ephemeral: true });
       if (!g.dynamicVC.recruitmentChannelId) return i.reply({ content: "募集板チャンネルが設定されていません。", ephemeral: true });
       return i.showModal(new ModalBuilder().setCustomId(`recruit_modal_${vc.id}`).setTitle("メンバー募集").addComponents(
-        createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setPlaceholder("ながら🚗³₃雑談").setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("mention").setLabel("【メンション】").setStyle(TextInputStyle.Short).setValue("@募集").setRequired(false)]),
         createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue("いまから").setRequired(false)]),
-        createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setPlaceholder("だれでも来てください🙌🏻💕話しましょ").setRequired(false)])
+        createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setRequired(false)])
       ));
     }
     if (cid === "cfg_intro_restore") {
@@ -602,7 +602,7 @@ client.on(Events.InteractionCreate, async (i) => {
       if (mentionInput === "@募集" && g.dynamicVC.recruitmentRoleId) mentionStr = `<@&${g.dynamicVC.recruitmentRoleId}>`;
       else if (!mentionInput.includes("<@") && /^\d+$/.test(mentionInput)) mentionStr = `<@&${mentionInput}>`;
 
-      const text = `${mentionStr}\n\n【募集内容】${content}\n【メンション】${mentionInput}\n【日時】${time}\n【場所】${vc.name}\n【一言】${comment}`;
+      const text = `${mentionStr}\n\n【募集内容】${content}\n【メンション】${mentionStr}\n【日時】${time}\n【場所】<#${vcId}>\n【一言】${comment}`;
       const row = createRow([new ButtonBuilder().setLabel("VCに参加する").setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${i.guildId}/${vcId}`)]);
       await ch.send({ content: text, components: [row] });
       return i.reply({ content: "✅ 募集を投稿しました！", ephemeral: true });
