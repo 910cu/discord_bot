@@ -237,7 +237,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
           { id: "select_cfg_female", ph: "♀️ 女性ロールを選択", role: true }
         ], back: "vc_features"
       },
-      recruit: { title: "📢 メンバー募集設定", desc: `- 📢 募集板: ${dynamicVC.recruitmentChannelId ? `<#${dynamicVC.recruitmentChannelId}>` : "`未設定`"}\n\nVC内から募集メッセージを投稿できる機能です。`, feature: "recruitEnabled", toggle: "toggle_recruit", label: "募集機能", select: { id: "select_cfg_recruit", ph: "📢 募集板チャンネルを選択", type: [ChannelType.GuildText] }, back: "vc_features" }
+      recruit: { title: "📢 メンバー募集設定", desc: `- 📢 募集板: ${dynamicVC.recruitmentChannelId ? `<#${dynamicVC.recruitmentChannelId}>` : "`未設定`"}\n\nVC内から募集メッセージを投稿できる機能です。`, feature: "recruitEnabled", toggle: "toggle_recruit", label: "募集機能", extraBtn: createBtn("config_recruit_id", "🆔 IDで設定", ButtonStyle.Primary), select: { id: "select_cfg_recruit", ph: "📢 募集板チャンネルを選択", type: [ChannelType.GuildText] }, back: "vc_features" }
     }[type];
 
     const isEnabled = features[configs.feature];
@@ -473,7 +473,12 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("vc_recruit_start_")) {
       const vc = i.member.voice.channel; if (!vc || vcOwners.get(vc.id) !== i.user.id) return i.reply({ content: "VCオーナーのみ実行可能です。", ephemeral: true });
       if (!g.dynamicVC.recruitmentChannelId) return i.reply({ content: "募集板チャンネルが設定されていません。", ephemeral: true });
-      return i.showModal(new ModalBuilder().setCustomId(`recruit_modal_${vc.id}`).setTitle("メンバー募集").addComponents(createRow([new TextInputBuilder().setCustomId("comment").setLabel("一言コメント").setStyle(TextInputStyle.Paragraph).setPlaceholder("例：@everyone 誰でも大歓迎です！").setRequired(false)])));
+      return i.showModal(new ModalBuilder().setCustomId(`recruit_modal_${vc.id}`).setTitle("メンバー募集").addComponents(
+        createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setPlaceholder("ながら🚗³₃雑談").setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("mention").setLabel("【メンション】").setStyle(TextInputStyle.Short).setValue("@募集").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue("いまから").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setPlaceholder("だれでも来てください🙌🏻💕話しましょ").setRequired(false)])
+      ));
     }
     if (cid === "cfg_intro_restore") {
       await i.reply({ content: "⏳ チャンネル内のメッセージをスキャンして復元を開始します...", ephemeral: true });
@@ -510,6 +515,11 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.showModal(new ModalBuilder().setCustomId("roles_id_modal").setTitle("ロールID設定").addComponents(
         createRow([new TextInputBuilder().setCustomId("male").setLabel("♂️ 男性ロールID").setStyle(TextInputStyle.Short).setValue(g.roles.male || "").setPlaceholder("ロールIDを入力").setRequired(false)]),
         createRow([new TextInputBuilder().setCustomId("female").setLabel("♀️ 女性ロールID").setStyle(TextInputStyle.Short).setValue(g.roles.female || "").setPlaceholder("ロールIDを入力").setRequired(false)])
+      ));
+    }
+    if (cid === "config_recruit_id") {
+      return i.showModal(new ModalBuilder().setCustomId("recruit_id_modal").setTitle("募集板ID設定").addComponents(
+        createRow([new TextInputBuilder().setCustomId("cid").setLabel("募集板チャンネルID").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.recruitmentChannelId || "").setPlaceholder("チャンネルIDを入力").setRequired(true)])
       ));
     }
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled", toggle_recruit: "recruitEnabled" };
@@ -569,15 +579,13 @@ client.on(Events.InteractionCreate, async (i) => {
       await createDynamicVC(i.guild, i.member, name, limit, g);
     }
     if (cid.startsWith("recruit_modal_")) {
-      const vcId = cid.replace("recruit_modal_", ""), comment = i.fields.getTextInputValue("comment") || "メンバー募集中！";
+      const vcId = cid.replace("recruit_modal_", ""), content = i.fields.getTextInputValue("content"), mention = i.fields.getTextInputValue("mention"), time = i.fields.getTextInputValue("time"), comment = i.fields.getTextInputValue("comment") || "なし";
       const vc = i.guild.channels.cache.get(vcId); if (!vc) return silentReply(i);
       const ch = i.guild.channels.cache.get(g.dynamicVC.recruitmentChannelId); if (!ch) return silentReply(i);
-      const embed = new EmbedBuilder().setColor(0x2ecc71).setTitle("📢 メンバー募集中！")
-        .setDescription(`<@${i.user.id}> が参加者を募集しています！\n\n**VC名:** \`${vc.name}\`\n**現在の人数:** \`${vc.members.size} / ${vc.userLimit || "∞"}\`人\n**コメント:** ${comment}`)
-        .setThumbnail(i.user.displayAvatarURL())
-        .setTimestamp();
+      const desc = `【募集内容】${content}\n【メンション】${mention}\n【日時】${time}\n【場所】${vc.name}\n【一言】${comment}`;
+      const embed = new EmbedBuilder().setColor(0x2ecc71).setTitle("📢 メンバー募集中！").setDescription(desc).setThumbnail(i.user.displayAvatarURL()).setTimestamp();
       const row = createRow([new ButtonBuilder().setLabel("VCに参加する").setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${i.guildId}/${vcId}`)]);
-      await ch.send({ content: "@everyone", embeds: [embed], components: [row] });
+      await ch.send({ content: mention.includes("@") ? mention : null, embeds: [embed], components: [row] });
       return i.reply({ content: "✅ 募集を投稿しました！", ephemeral: true });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
@@ -618,6 +626,13 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateGuildConfig(gid, { $set: { "roles.male": male || null, "roles.female": female || null } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "vc", updatedG));
+      await setupSettingsPanel(gid, updatedG);
+    }
+    if (cid === "recruit_id_modal") {
+      const val = i.fields.getTextInputValue("cid").trim();
+      await updateGuildConfig(gid, { $set: { "dynamicVC.recruitmentChannelId": val || null } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "recruit", updatedG));
       await setupSettingsPanel(gid, updatedG);
     }
   }
