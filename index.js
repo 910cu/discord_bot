@@ -17,6 +17,7 @@ const {
   UserSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  MessageFlags,
 } = require("discord.js");
 const fs = require("fs");
 const mongoose = require("mongoose");
@@ -233,7 +234,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
         ], back: "vc_features"
       }
     }[type];
-    
+
     const isEnabled = features[configs.feature];
     const statusLabel = isEnabled ? "` 🟢 有効 `" : "` 🔴 無効 `";
     const cleanedDesc = configs.desc.replace(/`未設定`/g, "`未設定` 🟥");
@@ -250,7 +251,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     const backId = configs.back ? `cfg_btn_${configs.back}` : "cfg_back_main";
     components.push(createRow([createBtn(backId, "⬅️ 戻る")]));
   }
-  return { embeds: [embed], components, ephemeral: true };
+  return { embeds: [embed], components, ephemeral: true, flags: [MessageFlags.SuppressNotifications] };
 }
 
 // ─── パネル更新 ──────────────────────────────────────────────────────────────
@@ -289,7 +290,7 @@ async function setupCreatePanel(gid) {
     const msgs = await channel.messages.fetch({ limit: 20 }); for (const m of msgs.filter(m => m.author.id === client.user.id).values()) await m.delete().catch(() => { });
     const embed = new EmbedBuilder().setColor(0x2b2d31).setTitle("🎙️ ボイスチャンネル作成").setDescription("作成したいVCのタイプを選択してください。\n-# 人数固定の部屋は、作成後に上限を変更できません。");
     const row = createRow([createBtn("create_vc_panel", "➕ 新規作成", ButtonStyle.Success), createBtn("create_vc_4", "👥 4人部屋", ButtonStyle.Secondary), createBtn("create_vc_5", "👥 5人部屋", ButtonStyle.Secondary)]);
-    await channel.send({ embeds: [embed], components: [row] });
+    await channel.send({ embeds: [embed], components: [row], flags: [MessageFlags.SuppressNotifications] });
   } catch (err) { console.error(err.message); }
 }
 
@@ -313,13 +314,24 @@ async function buildVCSettingsPayload(vc) {
 async function sendOrUpdateControlPanel(vc) {
   const oldId = controlPanelMsgIds.get(vc.id), payload = await buildPanelPayload(vc);
   if (oldId) try { await (await vc.messages.fetch(oldId)).edit(payload); return; } catch { }
-  try { const s = await vc.send(payload); controlPanelMsgIds.set(vc.id, s.id); } catch { }
+  try { const s = await vc.send({ ...payload, flags: [MessageFlags.SuppressNotifications] }); controlPanelMsgIds.set(vc.id, s.id); } catch { }
 }
 
 async function updateVcName(vc, newName) {
   const now = Date.now(), last = renameTimestamps.get(vc.id) || 0;
-  if (now - last < 300000) return vc.send("⚠️ 部屋名の変更は5分に1回までです。しばらく待ってからやり直してください。").then(m => setTimeout(() => m.delete().catch(() => { }), 5000));
+  if (now - last < 300000) return vc.send({ content: "⚠️ 部屋名の変更は5分に1回までです。しばらく待ってからやり直してください。", flags: [MessageFlags.SuppressNotifications] }).then(m => setTimeout(() => m.delete().catch(() => { }), 5000));
   try { await vc.setName(newName); renameTimestamps.set(vc.id, now); await sendOrUpdateControlPanel(vc); } catch (e) { console.error(e); }
+}
+
+// ─── VC自動削除ヘルパー ──────────────────────────────────────────────────────
+async function checkAndCleanupVC(vcId) {
+  const vc = client.channels.cache.get(vcId);
+  if (vc && vc.members.size === 0) {
+    try {
+      await vc.delete();
+      [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs].forEach(s => s.delete(vcId));
+    } catch (e) { }
+  }
 }
 
 async function updateKnockNotifyMessage(vc) {
@@ -327,7 +339,7 @@ async function updateKnockNotifyMessage(vc) {
   if (applicantIds.length === 0) { const id = knockNotifyMsgIds.get(vc.id); if (id) try { await (await vc.messages.fetch(id)).delete(); } catch { } knockNotifyMsgIds.delete(vc.id); return; }
   const embeds = [new EmbedBuilder().setColor(0xf39c12).setTitle("🚪 ノックされています"), ...applicantIds.map(uid => new EmbedBuilder().setColor(0xf39c12).setDescription(`<@${uid}> が入室しようとしています。`).setThumbnail(vc.guild.members.cache.get(uid)?.user.displayAvatarURL() || null))];
   const rows = applicantIds.slice(0, 5).map(uid => createRow([createBtn(`knock_approve_${vc.id}_${uid}`, "✨ 歓迎する", ButtonStyle.Success), createBtn(`knock_deny_${vc.id}_${uid}`, "🤝 お断りする", ButtonStyle.Danger)]));
-  const id = knockNotifyMsgIds.get(vc.id); try { if (id) await (await vc.messages.fetch(id)).edit({ embeds, components: rows }); else { const s = await vc.send({ embeds, components: rows }); knockNotifyMsgIds.set(vc.id, s.id); } } catch { }
+  const id = knockNotifyMsgIds.get(vc.id); try { if (id) await (await vc.messages.fetch(id)).edit({ embeds, components: rows }); else { const s = await vc.send({ embeds, components: rows, flags: [MessageFlags.SuppressNotifications] }); knockNotifyMsgIds.set(vc.id, s.id); } } catch { }
 }
 
 // ─── インタラクション ─────────────────────────────────────────────────────
@@ -478,7 +490,13 @@ client.on(Events.InteractionCreate, async (i) => {
     const cid = i.customId;
     if (cid.startsWith("create_vc_modal_")) {
       const name = i.fields.getTextInputValue("name"), limit = parseInt(cid.split("_")[3]); await silentReply(i);
-      try { const vc = await i.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId, userLimit: limit, permissionOverwrites: [{ id: i.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] }); tempChannels.add(vc.id); vcOwners.set(vc.id, i.user.id); if (limit) limitLockedVCs.add(vc.id); await sendOrUpdateControlPanel(vc); } catch { }
+      try {
+        const vc = await i.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId, userLimit: limit, permissionOverwrites: [{ id: i.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
+        tempChannels.add(vc.id); vcOwners.set(vc.id, i.user.id); if (limit) limitLockedVCs.add(vc.id);
+        await sendOrUpdateControlPanel(vc);
+        // 5分間誰も入らなければ削除
+        setTimeout(() => checkAndCleanupVC(vc.id), 5 * 60 * 1000);
+      } catch { }
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
     if (cid.startsWith("rename_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("rename_modal_", "")); await silentReply(i); if (vc) await updateVcName(vc, i.fields.getTextInputValue("name").trim()); }
@@ -543,7 +561,14 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   if (n.channelId && triggers.includes(n.channelId) && g.features.vcCreationEnabled) {
     const limit = n.channelId === triggers[1] ? 4 : n.channelId === triggers[2] ? 5 : 0;
     const name = limit === 4 ? (g.dynamicVC.channelName4 || "雑談4人部屋") : limit === 5 ? (g.dynamicVC.channelName5 || "雑談5人部屋") : g.dynamicVC.channelName.replace("{user}", n.member.displayName);
-    try { const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] }); tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id); await n.member.voice.setChannel(vc); await sendOrUpdateControlPanel(vc); } catch { }
+    try {
+      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
+      tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id);
+      await n.member.voice.setChannel(vc);
+      await sendOrUpdateControlPanel(vc);
+      // 念のため5分タイマー（移動に失敗した場合など）
+      setTimeout(() => checkAndCleanupVC(vc.id), 5 * 60 * 1000);
+    } catch { }
     return;
   }
   if (n.channelId && tempChannels.has(n.channelId)) {
@@ -554,7 +579,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     if (lockedVCs.has(vc.id) && vcOwners.get(vc.id) !== m.id && !allowedUsers.get(vc.id)?.has(m.id)) { try { await m.voice.disconnect(); } catch { } return; }
     if (o.channelId !== n.channelId && g.features.vcIntroDisplayEnabled) {
       const bio = await Intro.findOne({ guildId: gid, userId: m.id });
-      if (bio?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`)] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } }
+      if (bio?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } }
     }
   }
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
