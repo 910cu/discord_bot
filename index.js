@@ -259,7 +259,8 @@ async function getSettingsPayload(gid, type = "main", config = null) {
 // ─── パネル更新 ──────────────────────────────────────────────────────────────
 async function setupSettingsPanel(gid, config = null) {
   const g = config || await getGuildConfig(gid);
-  const SETTINGS_CHANNEL_ID = g.dynamicVC?.createPanelChannelId || "1496141555705319445"; // fallback
+  const SETTINGS_CHANNEL_ID = g.dynamicVC?.settingsChannelId;
+  if (!SETTINGS_CHANNEL_ID) return;
   const channel = client.channels.cache.get(SETTINGS_CHANNEL_ID); if (!channel) return;
   try {
     const msgs = await channel.messages.fetch({ limit: 50 });
@@ -350,7 +351,7 @@ client.on(Events.InteractionCreate, async (i) => {
     const gid = i.guildId;
     if (i.commandName === "setup") {
       if (!i.member.permissions.has(PermissionFlagsBits.Administrator)) return i.reply({ content: "管理者のみ実行可能です。", ephemeral: true });
-      await updateGuildConfig(gid, { $set: { "dynamicVC.createPanelChannelId": i.channelId } });
+      await updateGuildConfig(gid, { $set: { "dynamicVC.settingsChannelId": i.channelId } });
       await i.reply({ content: "✅ このチャンネルを管理パネル設置先に設定しました。パネルを送信します...", ephemeral: true });
       return await setupSettingsPanel(gid);
     }
@@ -598,7 +599,6 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
         if (!pendingRequests.get(vc.id).has(m.id)) {
           pendingRequests.get(vc.id).set(m.id, true);
           await updateKnockNotifyMessage(vc);
-          m.send(`🔒 **${vc.name}** はロックされています。入室申請を送信しました。部屋主の承認をお待ちください。`).catch(() => { });
         }
       } catch { }
       return;
