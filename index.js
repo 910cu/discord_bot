@@ -636,11 +636,9 @@ client.on(Events.InteractionCreate, async (i) => {
           .catch(() => {});
       }
 
-      // 2. 詳細（Embed）の送信
-      await ch.send({ embeds: [embed] });
-      
-      // 3. 参加用バナー（リンク）の送信（URLの文字列自体は透明文字にして隠す）
-      await ch.send({ content: `[\u200B](${link})` });
+      // 2. 詳細（Embed）と参加ボタン（URL直接リンク）の送信
+      const row = createRow([new ButtonBuilder().setLabel("ボイスチャンネルに参加").setStyle(ButtonStyle.Link).setURL(link)]);
+      await ch.send({ embeds: [embed], components: [row] });
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
