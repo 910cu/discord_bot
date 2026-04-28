@@ -17,6 +17,7 @@ const {
   UserSelectMenuBuilder,
   ChannelSelectMenuBuilder,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
   MessageFlags,
 } = require("discord.js");
 const fs = require("fs");
