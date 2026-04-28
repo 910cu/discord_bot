@@ -606,16 +606,14 @@ client.on(Events.InteractionCreate, async (i) => {
       if (mentionInput === "@募集" && g.dynamicVC.recruitmentRoleId) mentionStr = `<@&${g.dynamicVC.recruitmentRoleId}>`;
       else if (!mentionInput.includes("<@") && /^\d+$/.test(mentionInput)) mentionStr = `<@&${mentionInput}>`;
 
-      const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
-      let text = mentionStr ? `${mentionStr}\n${link}\n\n` : `${link}\n\n`;
-      text += `【募集内容】 **${content}**\n【日時】 **${time}**\n【場所】 <#${vcId}>`;
+      let text = `【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>`;
       if (vc.userLimit > 0) text += `\n【人数】 **${vc.userLimit}人**`;
       const gender = genderMode.get(vc.id);
       if (gender === "male") text += `\n【制限】 **♂️ 男性専用**`;
       else if (gender === "female") text += `\n【制限】 **♀️ 女性専用**`;
       text += `\n【一言】 **${comment}**`;
 
-      await ch.send({ content: text });
+      await ch.send({ content: text, allowedMentions: { parse: ['users', 'roles', 'everyone'] } });
       return i.reply({ content: "✅ 募集を投稿しました！", ephemeral: true });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
@@ -745,7 +743,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     }
     if (o.channelId !== n.channelId && g.features.vcIntroDisplayEnabled) {
       const bio = await Intro.findOne({ guildId: gid, userId: m.id });
-      if (bio?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } }
+      if (bio?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } }
     }
   }
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
