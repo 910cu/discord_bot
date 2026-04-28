@@ -230,23 +230,23 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), extraBtn3: createBtn("cfg_intro_list", "📋 承認済みリスト", ButtonStyle.Secondary), selects: [{ id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, { id: "select_cfg_intro_add", ph: "👤 手動で承認ユーザーを追加", user: true, multi: true }], back: "ch_features" },
       intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelIds?.length > 0 ? dynamicVC.introSourceChannelIds.map(id => `<#${id}>`).join(", ") : (dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥")}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択 (複数可)", type: [ChannelType.GuildText], multi: true }, back: "vc_features" },
       vc: {
-        title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n\nVCオーナーが部屋のロックや性別制限を行えるようにします。`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限", 
+        title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n\nVCオーナーが部屋のロックや性別制限を行えるようにします。`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限",
         extraBtn: createBtn("config_roles_id", "🆔 IDで設定", ButtonStyle.Primary),
         selects: [
           { id: "select_cfg_male", ph: "♂️ 男性ロールを選択", role: true },
           { id: "select_cfg_female", ph: "♀️ 女性ロールを選択", role: true }
         ], back: "vc_features"
       },
-      recruit: { 
-        title: "📢 メンバー募集設定", 
-        desc: `- 📢 募集板: ${dynamicVC.recruitmentChannelId ? `<#${dynamicVC.recruitmentChannelId}>` : "`未設定`"}\n- 🔔 募集ロール: ${dynamicVC.recruitmentRoleId ? `<@&${dynamicVC.recruitmentRoleId}>` : "`未設定`"}\n\nVC内から募集メッセージを投稿できる機能です。`, 
-        feature: "recruitEnabled", toggle: "toggle_recruit", label: "募集機能", 
-        extraBtn: createBtn("config_recruit_id", "🆔 チャンネルID設定", ButtonStyle.Primary), 
+      recruit: {
+        title: "📢 メンバー募集設定",
+        desc: `- 📢 募集板: ${dynamicVC.recruitmentChannelId ? `<#${dynamicVC.recruitmentChannelId}>` : "`未設定`"}\n- 🔔 募集ロール: ${dynamicVC.recruitmentRoleId ? `<@&${dynamicVC.recruitmentRoleId}>` : "`未設定`"}\n\nVC内から募集メッセージを投稿できる機能です。`,
+        feature: "recruitEnabled", toggle: "toggle_recruit", label: "募集機能",
+        extraBtn: createBtn("config_recruit_id", "🆔 チャンネルID設定", ButtonStyle.Primary),
         extraBtn2: createBtn("config_recruit_role_id", "🆔 ロールID設定", ButtonStyle.Primary),
         selects: [
           { id: "select_cfg_recruit", ph: "📢 募集板チャンネルを選択", type: [ChannelType.GuildText] },
           { id: "select_cfg_recruit_role", ph: "🔔 募集ロールを選択", role: true }
-        ], back: "vc_features" 
+        ], back: "vc_features"
       }
     }[type];
 
@@ -419,7 +419,7 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("create_vc_")) {
       if (!g.features.vcPanelEnabled) return i.reply({ content: "無効です", ephemeral: true });
       const limit = cid === "create_vc_4" ? 4 : cid === "create_vc_5" ? 5 : 0;
-      
+
       if (limit > 0) {
         // 4人部屋・5人部屋は名前固定で即時作成
         const name = limit === 4 ? (g.dynamicVC.channelName4 || "雑談4人部屋") : (g.dynamicVC.channelName5 || "雑談5人部屋");
@@ -601,12 +601,12 @@ client.on(Events.InteractionCreate, async (i) => {
       const vcId = cid.replace("recruit_modal_", ""), content = i.fields.getTextInputValue("content"), mentionInput = i.fields.getTextInputValue("mention"), time = i.fields.getTextInputValue("time"), comment = i.fields.getTextInputValue("comment") || "なし";
       const vc = i.guild.channels.cache.get(vcId); if (!vc) return silentReply(i);
       const ch = i.guild.channels.cache.get(g.dynamicVC.recruitmentChannelId); if (!ch) return silentReply(i);
-      
+
       let mentionStr = mentionInput;
       if (mentionInput === "@募集" && g.dynamicVC.recruitmentRoleId) mentionStr = `<@&${g.dynamicVC.recruitmentRoleId}>`;
       else if (!mentionInput.includes("<@") && /^\d+$/.test(mentionInput)) mentionStr = `<@&${mentionInput}>`;
 
-      const text = `【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>\n\n【一言】\n**${comment}**`;
+      const text = `【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>\n【一言】 **${comment}**`;
       const row = createRow([createBtn(`vc_join_click_${vcId}`, "VCに参加する", ButtonStyle.Success)]);
       await ch.send({ content: text, components: [row] });
       return i.reply({ content: "✅ 募集を投稿しました！", ephemeral: true });
@@ -771,7 +771,7 @@ async function syncIntroHistory(gid) {
   };
   if (checkChId) await scan(checkChId, false);
   for (const sid of sourceChIds) await scan(sid, true);
-  
+
   // ロール保持者を承認済みとして同期
   const members = await guild.members.fetch();
   for (const m of members.values()) {
@@ -779,7 +779,7 @@ async function syncIntroHistory(gid) {
       await Intro.findOneAndUpdate({ guildId: gid, userId: m.id }, { $set: { introduced: true } }, { upsert: true });
     }
   }
-  
+
   console.log(`🔄 Guild ${gid}: チャンネル履歴およびロールからの同期が完了しました。`);
 }
 
@@ -870,7 +870,7 @@ client.once(Events.ClientReady, async () => {
         const now = Date.now();
         for (const m of members.values()) {
           if (m.user.bot || !m.joinedTimestamp) continue;
-          
+
           // ロールをすでに持っている場合は承認済み扱い
           if (m.roles.cache.has(gCurrent.roles.male) || m.roles.cache.has(gCurrent.roles.female)) {
             await Intro.findOneAndUpdate({ guildId: guild.id, userId: m.id }, { $set: { introduced: true } }, { upsert: true });
