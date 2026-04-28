@@ -628,12 +628,18 @@ client.on(Events.InteractionCreate, async (i) => {
 
       const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
       
+      // 1. 通知（Ping）だけを飛ばして即座に削除する（ゴーストピン）
+      if (mentionStr) {
+        await ch.send({ content: mentionStr, allowedMentions: { parse: ['users', 'roles', 'everyone'] } })
+          .then(m => m.delete().catch(() => {}))
+          .catch(() => {});
+      }
+
+      // 2. 詳細（Embed）の送信
       await ch.send({ embeds: [embed] });
       
-      const secondPayload = { content: mentionStr ? `${mentionStr} ${link}` : link };
-      if (mentionStr) secondPayload.allowedMentions = { parse: ['users', 'roles', 'everyone'] };
-      
-      await ch.send(secondPayload);
+      // 3. 参加用バナー（リンク）の送信
+      await ch.send({ content: link });
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
