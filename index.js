@@ -627,10 +627,13 @@ client.on(Events.InteractionCreate, async (i) => {
         .setDescription(`**募集主** : <@${i.user.id}>\n\n**詳細**\n- 内容: \`${content}\`\n- 日時: \`${time}\`\n- 場所: <#${vcId}>\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 一言: \`${safeComment}\``);
 
       const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
-      const payload = { embeds: [embed], allowedMentions: { parse: ['users', 'roles', 'everyone'] } };
-      payload.content = mentionStr ? `${link} ${mentionStr}` : link;
-
-      await ch.send(payload);
+      
+      await ch.send({ embeds: [embed] });
+      
+      const secondPayload = { content: mentionStr ? `${mentionStr} ${link}` : link };
+      if (mentionStr) secondPayload.allowedMentions = { parse: ['users', 'roles', 'everyone'] };
+      
+      await ch.send(secondPayload);
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
