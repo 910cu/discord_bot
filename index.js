@@ -329,7 +329,7 @@ async function buildPanelPayload(vc) {
   }
   const row1 = createRow([createBtn("vc_rename", "✏️ 名前変更"), createBtn("vc_toggle_lock", locked ? "🔓 解除" : "🔒 ロック", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 制限設定", ButtonStyle.Secondary, !g.features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled)]);
   const components = locked ? [row1, createRow([createBtn(`vc_knock_${vc.id}`, "🚪 ノックして参加申請", ButtonStyle.Success)])] : [row1];
-  if (g.features.recruitEnabled) components.push(createRow([createBtn(`vc_recruit_start_${vc.id}`, "📢 メンバー募集", ButtonStyle.Success)]));
+  if (g.features.recruitEnabled) components.push(createRow([createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success)]));
   return { embeds: [embed], components };
 }
 
@@ -618,12 +618,15 @@ client.on(Events.InteractionCreate, async (i) => {
       else if (mentionVal === "here") mentionStr = "@here";
       else if (mentionVal !== "none") mentionStr = `<@&${mentionVal}>`;
 
-      let text = `【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>`;
-      if (vc.userLimit > 0) text += `\n【人数】 **${vc.userLimit}人**`;
+      let text = `**募集内容** : ${content}\n\n**詳細**\n`;
+      text += `- 日時: ${time}\n`;
+      text += `- 場所: <#${vcId}>\n`;
+      if (mentionStr) text += `- メンション: ${mentionStr}\n`;
+      if (vc.userLimit > 0) text += `- 上限: \`${vc.userLimit}人\`\n`;
       const gender = genderMode.get(vc.id);
-      if (gender === "male") text += `\n【制限】 **♂️ 男性専用**`;
-      else if (gender === "female") text += `\n【制限】 **♀️ 女性専用**`;
-      text += `\n【一言】 **${comment}**`;
+      if (gender === "male") text += `- 制限: \`♂️ 男性専用\`\n`;
+      else if (gender === "female") text += `- 制限: \`♀️ 女性専用\`\n`;
+      text += `\n**一言**\n${comment}`;
 
       await ch.send({ content: text, allowedMentions: { parse: ['users', 'roles', 'everyone'] } });
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
