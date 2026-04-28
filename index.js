@@ -487,12 +487,18 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("vc_recruit_start_")) {
       const vc = i.member.voice.channel; if (!vc || vcOwners.get(vc.id) !== i.user.id) return i.reply({ content: "VCオーナーのみ実行可能です。", ephemeral: true });
       if (!g.dynamicVC.recruitmentChannelId) return i.reply({ content: "募集板チャンネルが設定されていません。", ephemeral: true });
-      return i.showModal(new ModalBuilder().setCustomId(`recruit_modal_${vc.id}`).setTitle("メンバー募集").addComponents(
-        createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setRequired(true)]),
-        createRow([new TextInputBuilder().setCustomId("mention").setLabel("メンション (@募集 または ID)").setStyle(TextInputStyle.Short).setValue("@募集").setRequired(false)]),
-        createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue("いまから").setRequired(false)]),
-        createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setRequired(false)])
-      ));
+
+      const opts = [
+        { label: "メンションなし", value: "none", description: "メンションを付けずに募集します" },
+        { label: "@everyone", value: "everyone", description: "サーバー全体に通知します" },
+        { label: "@here", value: "here", description: "オンラインのユーザーに通知します" }
+      ];
+      if (g.dynamicVC.recruitmentRoleId) {
+        opts.unshift({ label: "設定済みの募集ロール", value: "role", description: "設定パネルで指定したロールに通知します" });
+      }
+      const menu1 = new StringSelectMenuBuilder().setCustomId(`rmnu_str_${vc.id}`).setPlaceholder("基本オプションから選択").addOptions(opts);
+      const menu2 = new RoleSelectMenuBuilder().setCustomId(`rmnu_rol_${vc.id}`).setPlaceholder("サーバーのロールから直接選択");
+      return i.reply({ content: "📢 募集メッセージのメンション先を以下から選択してください。", components: [createRow([menu1]), createRow([menu2])], ephemeral: true });
     }
     if (cid === "cfg_intro_restore") {
       await i.reply({ content: "⏳ チャンネル内のメッセージをスキャンして復元を開始します...", ephemeral: true });
@@ -597,14 +603,19 @@ client.on(Events.InteractionCreate, async (i) => {
       await silentReply(i);
       await createDynamicVC(i.guild, i.member, name, limit, g);
     }
-    if (cid.startsWith("recruit_modal_")) {
-      const vcId = cid.replace("recruit_modal_", ""), content = i.fields.getTextInputValue("content"), mentionInput = i.fields.getTextInputValue("mention"), time = i.fields.getTextInputValue("time"), comment = i.fields.getTextInputValue("comment") || "なし";
+    if (cid.startsWith("rmodal_")) {
+      const parts = cid.replace("rmodal_", "").split("_");
+      const mentionVal = parts[0];
+      const vcId = parts[1];
+      const content = i.fields.getTextInputValue("content"), time = i.fields.getTextInputValue("time"), comment = i.fields.getTextInputValue("comment") || "なし";
       const vc = i.guild.channels.cache.get(vcId); if (!vc) return silentReply(i);
       const ch = i.guild.channels.cache.get(g.dynamicVC.recruitmentChannelId); if (!ch) return silentReply(i);
 
-      let mentionStr = mentionInput;
-      if (mentionInput === "@募集" && g.dynamicVC.recruitmentRoleId) mentionStr = `<@&${g.dynamicVC.recruitmentRoleId}>`;
-      else if (!mentionInput.includes("<@") && /^\d+$/.test(mentionInput)) mentionStr = `<@&${mentionInput}>`;
+      let mentionStr = "";
+      if (mentionVal === "role" && g.dynamicVC.recruitmentRoleId) mentionStr = `<@&${g.dynamicVC.recruitmentRoleId}>`;
+      else if (mentionVal === "everyone") mentionStr = "@everyone";
+      else if (mentionVal === "here") mentionStr = "@here";
+      else if (mentionVal !== "none") mentionStr = `<@&${mentionVal}>`;
 
       let text = `【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>`;
       if (vc.userLimit > 0) text += `\n【人数】 **${vc.userLimit}人**`;
@@ -614,7 +625,7 @@ client.on(Events.InteractionCreate, async (i) => {
       text += `\n【一言】 **${comment}**`;
 
       await ch.send({ content: text, allowedMentions: { parse: ['users', 'roles', 'everyone'] } });
-      return i.reply({ content: "✅ 募集を投稿しました！", ephemeral: true });
+      return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
     if (cid.startsWith("rename_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("rename_modal_", "")); await silentReply(i); if (vc) await updateVcName(vc, i.fields.getTextInputValue("name").trim()); }
@@ -673,6 +684,17 @@ client.on(Events.InteractionCreate, async (i) => {
   }
 
   if (i.isAnySelectMenu()) {
+    if (i.customId.startsWith("rmnu_str_") || i.customId.startsWith("rmnu_rol_")) {
+      const isRole = i.customId.startsWith("rmnu_rol_");
+      const vcId = i.customId.replace(isRole ? "rmnu_rol_" : "rmnu_str_", "");
+      const mentionVal = i.values[0];
+      return i.showModal(new ModalBuilder().setCustomId(`rmodal_${mentionVal}_${vcId}`).setTitle("メンバー募集").addComponents(
+        createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue("いまから").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setRequired(false)])
+      ));
+    }
+
     if (i.customId.startsWith("vc_afk_select_")) {
       const targetUid = i.values[0];
       const member = await i.guild.members.fetch(targetUid).catch(() => null);
