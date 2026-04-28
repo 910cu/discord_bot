@@ -489,7 +489,7 @@ client.on(Events.InteractionCreate, async (i) => {
       if (!g.dynamicVC.recruitmentChannelId) return i.reply({ content: "募集板チャンネルが設定されていません。", ephemeral: true });
       return i.showModal(new ModalBuilder().setCustomId(`recruit_modal_${vc.id}`).setTitle("メンバー募集").addComponents(
         createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setRequired(true)]),
-        createRow([new TextInputBuilder().setCustomId("mention").setLabel("【メンション】").setStyle(TextInputStyle.Short).setValue("@募集").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("mention").setLabel("メンション (@募集 または ID)").setStyle(TextInputStyle.Short).setValue("@募集").setRequired(false)]),
         createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue("いまから").setRequired(false)]),
         createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setRequired(false)])
       ));
@@ -607,9 +607,15 @@ client.on(Events.InteractionCreate, async (i) => {
       else if (!mentionInput.includes("<@") && /^\d+$/.test(mentionInput)) mentionStr = `<@&${mentionInput}>`;
 
       const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
-      const text = `${link}\n\n【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>\n【一言】 **${comment}**`;
-      const row = createRow([createBtn(`vc_join_click_${vcId}`, "VCに参加する", ButtonStyle.Success)]);
-      await ch.send({ content: text, components: [row] });
+      let text = mentionStr ? `${mentionStr}\n${link}\n\n` : `${link}\n\n`;
+      text += `【募集内容】 **${content}**\n【日時】 **${time}**\n【場所】 <#${vcId}>`;
+      if (vc.userLimit > 0) text += `\n【人数】 **${vc.userLimit}人**`;
+      const gender = genderMode.get(vc.id);
+      if (gender === "male") text += `\n【制限】 **♂️ 男性専用**`;
+      else if (gender === "female") text += `\n【制限】 **♀️ 女性専用**`;
+      text += `\n【一言】 **${comment}**`;
+
+      await ch.send({ content: text });
       return i.reply({ content: "✅ 募集を投稿しました！", ephemeral: true });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
