@@ -624,7 +624,8 @@ client.on(Events.InteractionCreate, async (i) => {
 
       const embed = new EmbedBuilder()
         .setColor(0x2b2d31)
-        .setDescription(`**募集主** : <@${i.user.id}>\n\n**詳細**\n- 内容: \`${content}\`\n- 日時: \`${time}\`\n- 場所: <#${vcId}>\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 一言: \`${safeComment}\``);
+        .setDescription(`**募集主** : <@${i.user.id}>\n\n**詳細**\n- 内容: \`${content}\`\n- 開始時間: \`${time}\`\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 一言: \`${safeComment}\``)
+        .setTimestamp();
 
       const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
       
@@ -705,7 +706,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const mentionVal = i.values[0];
       return i.showModal(new ModalBuilder().setCustomId(`rmodal_${mentionVal}_${vcId}`).setTitle("メンバー募集").addComponents(
         createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setRequired(true)]),
-        createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue("いまから").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("time").setLabel("【開始時間】").setStyle(TextInputStyle.Short).setValue("いまから").setRequired(false)]),
         createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setRequired(false)])
       ));
     }
