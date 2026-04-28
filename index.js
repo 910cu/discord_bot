@@ -624,12 +624,11 @@ client.on(Events.InteractionCreate, async (i) => {
 
       const embed = new EmbedBuilder()
         .setColor(0x2b2d31)
-        .setTitle("📢 メンバー募集")
         .setDescription(`**募集主** : <@${i.user.id}>\n\n**詳細**\n- 内容: \`${content}\`\n- 日時: \`${time}\`\n- 場所: <#${vcId}>\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 一言: \`${safeComment}\``);
 
+      const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
       const payload = { embeds: [embed], allowedMentions: { parse: ['users', 'roles', 'everyone'] } };
-      if (mentionStr) payload.content = mentionStr;
-      payload.components = [createRow([createBtn(`vc_join_click_${vcId}`, "VCに参加する", ButtonStyle.Success)])];
+      payload.content = mentionStr ? `${link} ${mentionStr}` : link;
 
       await ch.send(payload);
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
