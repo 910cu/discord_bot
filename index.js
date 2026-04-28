@@ -606,7 +606,8 @@ client.on(Events.InteractionCreate, async (i) => {
       if (mentionInput === "@募集" && g.dynamicVC.recruitmentRoleId) mentionStr = `<@&${g.dynamicVC.recruitmentRoleId}>`;
       else if (!mentionInput.includes("<@") && /^\d+$/.test(mentionInput)) mentionStr = `<@&${mentionInput}>`;
 
-      const text = `【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>\n【一言】 **${comment}**`;
+      const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
+      const text = `${link}\n\n【募集内容】 **${content}**\n【メンション】 ${mentionStr}\n【日時】 **${time}**\n【場所】 <#${vcId}>\n【一言】 **${comment}**`;
       const row = createRow([createBtn(`vc_join_click_${vcId}`, "VCに参加する", ButtonStyle.Success)]);
       await ch.send({ content: text, components: [row] });
       return i.reply({ content: "✅ 募集を投稿しました！", ephemeral: true });
