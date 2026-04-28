@@ -618,17 +618,20 @@ client.on(Events.InteractionCreate, async (i) => {
       else if (mentionVal === "here") mentionStr = "@here";
       else if (mentionVal !== "none") mentionStr = `<@&${mentionVal}>`;
 
-      let text = `**募集内容** : ${content}\n\n**詳細**\n`;
-      text += `- 日時: ${time}\n`;
-      text += `- 場所: <#${vcId}>\n`;
-      if (mentionStr) text += `- メンション: ${mentionStr}\n`;
-      if (vc.userLimit > 0) text += `- 上限: \`${vc.userLimit}人\`\n`;
+      const limit = vc.userLimit ?? 0;
       const gender = genderMode.get(vc.id);
-      if (gender === "male") text += `- 制限: \`♂️ 男性専用\`\n`;
-      else if (gender === "female") text += `- 制限: \`♀️ 女性専用\`\n`;
-      text += `\n**一言**\n${comment}`;
+      const safeComment = comment.replace(/\n/g, " ");
 
-      await ch.send({ content: text, allowedMentions: { parse: ['users', 'roles', 'everyone'] } });
+      const embed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setTitle("📢 メンバー募集")
+        .setDescription(`**募集主** : <@${i.user.id}>\n\n**詳細**\n- 内容: \`${content}\`\n- 日時: \`${time}\`\n- 場所: <#${vcId}>\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 一言: \`${safeComment}\``);
+
+      const payload = { embeds: [embed], allowedMentions: { parse: ['users', 'roles', 'everyone'] } };
+      if (mentionStr) payload.content = mentionStr;
+      payload.components = [createRow([createBtn(`vc_join_click_${vcId}`, "VCに参加する", ButtonStyle.Success)])];
+
+      await ch.send(payload);
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
