@@ -625,7 +625,8 @@ client.on(Events.InteractionCreate, async (i) => {
 
       let desc = `募集内容: ${content}\n`;
       desc += `日時: ${time}\n`;
-      desc += `場所: <#${vcId}>\n`;
+      const vcUrl = `https://discord.com/channels/${i.guildId}/${vcId}`;
+      desc += `場所: ${vcUrl}\n`;
       if (mentionStr) desc += `メンション: ${mentionStr}\n`;
       if (limit > 0) desc += `上限: ${limit}人\n`;
       if (gender === "male") desc += `制限: ♂️ 男性専用\n`;
@@ -656,8 +657,6 @@ client.on(Events.InteractionCreate, async (i) => {
         if (!webhook) webhook = await ch.createWebhook({ name: "VC Recruitment", avatar: i.client.user.displayAvatarURL() });
       } catch (e) { console.error(e); }
 
-      const vcUrl = `https://discord.com/channels/${i.guildId}/${vcId}`;
-
       if (webhook) {
         // 同じ募集主でも連続してアイコンが表示されるように、名前の2文字目に不可視文字をランダムに挿入（トリム対策＆グループ化防止）
         const nameChars = Array.from(i.member.displayName);
@@ -666,12 +665,12 @@ client.on(Events.InteractionCreate, async (i) => {
         const webhookName = nameChars.join('');
 
         await webhook.send({
-          content: `${desc}\n${vcUrl}`,
+          content: desc,
           username: webhookName,
           avatarURL: i.member.displayAvatarURL({ dynamic: true })
         });
       } else {
-        await ch.send({ content: `${desc}\n${vcUrl}` });
+        await ch.send({ content: desc });
       }
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
