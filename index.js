@@ -659,11 +659,15 @@ client.on(Events.InteractionCreate, async (i) => {
       const row = createRow([new ButtonBuilder().setLabel("ボイスチャンネルに参加").setStyle(ButtonStyle.Link).setURL(link)]);
 
       if (webhook) {
-        // 同じ募集主でも連続してアイコンが表示されるようにゼロ幅スペースをランダムに追加（グループ化防止）
-        const randomZws = "\u200B".repeat(Math.floor(Math.random() * 5) + 1);
+        // 同じ募集主でも連続してアイコンが表示されるように、名前の2文字目に不可視文字をランダムに挿入（トリム対策＆グループ化防止）
+        const nameChars = Array.from(i.member.displayName);
+        const randomInvisibles = Array.from({ length: 4 }, () => ["\u200B", "\u200C", "\u200D"][Math.floor(Math.random() * 3)]).join('');
+        if (nameChars.length > 0) nameChars.splice(1, 0, randomInvisibles);
+        const webhookName = nameChars.join('');
+
         await webhook.send({
           content: desc,
-          username: `${i.member.displayName}${randomZws}`,
+          username: webhookName,
           avatarURL: i.member.displayAvatarURL({ dynamic: true }),
           components: [row]
         });
