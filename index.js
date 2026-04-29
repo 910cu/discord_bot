@@ -656,16 +656,19 @@ client.on(Events.InteractionCreate, async (i) => {
         if (!webhook) webhook = await ch.createWebhook({ name: "VC Recruitment", avatar: i.client.user.displayAvatarURL() });
       } catch (e) { console.error(e); }
 
+      const row = createRow([new ButtonBuilder().setLabel("ボイスチャンネルに参加").setStyle(ButtonStyle.Link).setURL(link)]);
+
       if (webhook) {
         // 同じ募集主でも連続してアイコンが表示されるようにゼロ幅スペースをランダムに追加（グループ化防止）
         const randomZws = "\u200B".repeat(Math.floor(Math.random() * 5) + 1);
         await webhook.send({
           content: desc,
-          username: `${i.member.displayName} (募集)${randomZws}`,
-          avatarURL: i.member.displayAvatarURL({ dynamic: true })
+          username: `${i.member.displayName}${randomZws}`,
+          avatarURL: i.member.displayAvatarURL({ dynamic: true }),
+          components: [row]
         });
       } else {
-        await ch.send({ content: desc });
+        await ch.send({ content: desc, components: [row] });
       }
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
