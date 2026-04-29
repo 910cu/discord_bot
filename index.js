@@ -501,8 +501,7 @@ client.on(Events.InteractionCreate, async (i) => {
       }
       opts.push({ label: "メンションなし", value: "none", description: "メンションを付けずに募集します" });
 
-      const maxVals = Math.max(1, Math.min(25, opts.length));
-      const menu1 = new StringSelectMenuBuilder().setCustomId(`rmnu_str_${vc.id}`).setPlaceholder("メンション先を選択 (複数可)").addOptions(opts).setMinValues(1).setMaxValues(maxVals);
+      const menu1 = new StringSelectMenuBuilder().setCustomId(`rmnu_str_${vc.id}`).setPlaceholder("メンション先を選択").addOptions(opts);
       return i.reply({ content: "📢 募集メッセージのメンション先を選択してください。", components: [createRow([menu1])], ephemeral: true });
     }
     if (cid === "cfg_intro_restore") {
