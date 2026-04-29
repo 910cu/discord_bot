@@ -565,7 +565,7 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateGuildConfig(gid, { $set: { features: newFeatures } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, nextType, updatedG));
-      await setupSettingsPanel(gid, updatedG);
+
     }
 
     if (cid === "config_intro_time") return i.showModal(new ModalBuilder().setCustomId("intro_time_modal").setTitle("期限設定").addComponents(createRow([new TextInputBuilder().setCustomId("warn").setLabel("警告(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introWarnMinutes || 2880))]), createRow([new TextInputBuilder().setCustomId("kick").setLabel("キック(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introKickMinutes || 4320))])));
@@ -623,8 +623,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const gender = genderMode.get(vc.id);
       const safeComment = comment.replace(/\n/g, " ");
 
-      let desc = `**募集主** : <@${i.user.id}>\n\n`;
-      desc += `募集内容: ${content}\n`;
+      let desc = `募集内容: ${content}\n`;
       desc += `日時: ${time}\n`;
       desc += `場所: <#${vcId}>\n`;
       if (mentionStr) desc += `メンション: ${mentionStr}\n`;
@@ -649,8 +648,13 @@ client.on(Events.InteractionCreate, async (i) => {
           .catch(() => { });
       }
 
-      // 2. テキスト本文のみの送信（ボタン等の縁がある要素はすべて排除）
-      await ch.send({ content: desc });
+      // 2. 縁が見えないEmbedを作成して、募集主のアイコンを表示する
+      const embed = new EmbedBuilder()
+        .setColor(0x2b2d31)
+        .setAuthor({ name: `募集主: ${i.member.displayName}`, iconURL: i.member.displayAvatarURL({ dynamic: true }) })
+        .setDescription(desc);
+
+      await ch.send({ embeds: [embed] });
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
@@ -661,7 +665,7 @@ client.on(Events.InteractionCreate, async (i) => {
         await updateGuildConfig(gid, { $set: { "dynamicVC.introWarnMinutes": w, "dynamicVC.introKickMinutes": k } });
         const updatedG = await getGuildConfig(gid, true);
         await i.update(await getSettingsPayload(gid, "intro_kick", updatedG));
-        await setupSettingsPanel(gid, updatedG);
+
       }
     }
     if (cid === "trigger_name_modal") {
@@ -669,7 +673,7 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateGuildConfig(gid, { $set: { "dynamicVC.channelName": nf, "dynamicVC.channelName4": n4, "dynamicVC.channelName5": n5 } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
-      await setupSettingsPanel(gid, updatedG);
+
     }
     if (cid.startsWith("msg_submit_")) {
       const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"];
@@ -683,7 +687,7 @@ client.on(Events.InteractionCreate, async (i) => {
         await updateGuildConfig(gid, { $set: { "dynamicVC.autoDeleteMinutes": m } });
         const updatedG = await getGuildConfig(gid, true);
         await i.update(await getSettingsPayload(gid, "ch_features", updatedG));
-        await setupSettingsPanel(gid, updatedG);
+
       }
     }
     if (cid === "roles_id_modal") {
@@ -691,21 +695,21 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateGuildConfig(gid, { $set: { "roles.male": male || null, "roles.female": female || null } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "vc", updatedG));
-      await setupSettingsPanel(gid, updatedG);
+
     }
     if (cid === "recruit_id_modal") {
       const val = i.fields.getTextInputValue("cid").trim();
       await updateGuildConfig(gid, { $set: { "dynamicVC.recruitmentChannelId": val || null } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "recruit", updatedG));
-      await setupSettingsPanel(gid, updatedG);
+
     }
     if (cid === "recruit_role_id_modal") {
       const val = i.fields.getTextInputValue("rid").trim();
       await updateGuildConfig(gid, { $set: { "dynamicVC.recruitmentRoleId": val || null } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "recruit", updatedG));
-      await setupSettingsPanel(gid, updatedG);
+
     }
   }
 
@@ -747,7 +751,7 @@ client.on(Events.InteractionCreate, async (i) => {
       else if (map[field]) await updateGuildConfig(gid, { $set: { [`dynamicVC.${map[field]}`]: (field === "introsource" || field === "recruit_role") ? vals : vals[0] } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, type, updatedG));
-      await setupSettingsPanel(gid, updatedG); if (field === "panel") await setupCreatePanel(gid);
+      if (field === "panel") await setupCreatePanel(gid);
     }
   }
 });
