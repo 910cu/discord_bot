@@ -87,6 +87,7 @@ const defaultMessages = {
 
 const tempChannels = new Set(), controlPanelMsgIds = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), renameTimestamps = new Map();
 const guildCache = new Map();
+const recruitSelections = new Map();
 
 // ─── データ管理ユーティリティ ──────────────────────────────────────────────────
 const defaultFeatures = {
@@ -500,7 +501,8 @@ client.on(Events.InteractionCreate, async (i) => {
       }
       opts.push({ label: "メンションなし", value: "none", description: "メンションを付けずに募集します" });
 
-      const menu1 = new StringSelectMenuBuilder().setCustomId(`rmnu_str_${vc.id}`).setPlaceholder("設定したロールから選択").addOptions(opts);
+      const maxVals = Math.max(1, Math.min(25, opts.length));
+      const menu1 = new StringSelectMenuBuilder().setCustomId(`rmnu_str_${vc.id}`).setPlaceholder("メンション先を選択 (複数可)").addOptions(opts).setMinValues(1).setMaxValues(maxVals);
       return i.reply({ content: "📢 募集メッセージのメンション先を選択してください。", components: [createRow([menu1])], ephemeral: true });
     }
     if (cid === "cfg_intro_restore") {
@@ -615,17 +617,24 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     if (cid.startsWith("rmodal_")) {
       const parts = cid.replace("rmodal_", "").split("_");
-      const mentionVal = parts[0];
+      const token = parts[0];
       const vcId = parts[1];
       const content = i.fields.getTextInputValue("content"), time = i.fields.getTextInputValue("time"), comment = i.fields.getTextInputValue("comment");
       const vc = i.guild.channels.cache.get(vcId); if (!vc) return silentReply(i);
       const ch = i.guild.channels.cache.get(g.dynamicVC.recruitmentChannelId); if (!ch) return silentReply(i);
 
+      let selections = recruitSelections.get(token) || ["none"];
+      if (selections.length > 1 && selections.includes("none")) selections = selections.filter(s => s !== "none");
+      
       let mentionStr = "";
-      if (mentionVal === "role" && g.dynamicVC.recruitmentRoleId) mentionStr = `<@&${g.dynamicVC.recruitmentRoleId}>`;
-      else if (mentionVal === "everyone") mentionStr = "@everyone";
-      else if (mentionVal === "here") mentionStr = "@here";
-      else if (mentionVal !== "none") mentionStr = `<@&${mentionVal}>`;
+      if (!selections.includes("none")) {
+        mentionStr = selections.map(val => {
+          if (val === "role" && g.dynamicVC.recruitmentRoleId) return `<@&${g.dynamicVC.recruitmentRoleId}>`;
+          if (val === "everyone") return "@everyone";
+          if (val === "here") return "@here";
+          return `<@&${val}>`;
+        }).join(" ");
+      }
 
       const limit = vc.userLimit ?? 0;
       const gender = genderMode.get(vc.id);
@@ -749,8 +758,9 @@ client.on(Events.InteractionCreate, async (i) => {
     if (i.customId.startsWith("rmnu_str_") || i.customId.startsWith("rmnu_rol_")) {
       const isRole = i.customId.startsWith("rmnu_rol_");
       const vcId = i.customId.replace(isRole ? "rmnu_rol_" : "rmnu_str_", "");
-      const mentionVal = i.values[0];
-      return i.showModal(new ModalBuilder().setCustomId(`rmodal_${mentionVal}_${vcId}`).setTitle("メンバー募集").addComponents(
+      const token = Math.random().toString(36).substring(7);
+      recruitSelections.set(token, i.values);
+      return i.showModal(new ModalBuilder().setCustomId(`rmodal_${token}_${vcId}`).setTitle("メンバー募集").addComponents(
         createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.defaultRecruitContent || "雑談").setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.defaultRecruitTime || "いまから").setRequired(false)]),
         createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setRequired(false)])
