@@ -624,14 +624,14 @@ client.on(Events.InteractionCreate, async (i) => {
       const safeComment = comment.replace(/\n/g, " ");
 
       let desc = `**募集主** : <@${i.user.id}>\n\n`;
-      desc += `募集内容: \`${content}\`\n`;
-      desc += `日時: \`${time}\`\n`;
+      desc += `募集内容: ${content}\n`;
+      desc += `日時: ${time}\n`;
       desc += `場所: <#${vcId}>\n`;
       if (mentionStr) desc += `メンション: ${mentionStr}\n`;
-      if (limit > 0) desc += `上限: \`${limit}人\`\n`;
-      if (gender === "male") desc += `制限: \`♂️ 男性専用\`\n`;
-      else if (gender === "female") desc += `制限: \`♀️ 女性専用\`\n`;
-      desc += `一言: \`${safeComment}\``;
+      if (limit > 0) desc += `上限: ${limit}人\n`;
+      if (gender === "male") desc += `制限: ♂️ 男性専用\n`;
+      else if (gender === "female") desc += `制限: ♀️ 女性専用\n`;
+      desc += `一言: ${safeComment}`;
 
       const embed = new EmbedBuilder()
         .setColor(0x57F287)
