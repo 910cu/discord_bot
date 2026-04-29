@@ -656,7 +656,7 @@ client.on(Events.InteractionCreate, async (i) => {
         if (!webhook) webhook = await ch.createWebhook({ name: "VC Recruitment", avatar: i.client.user.displayAvatarURL() });
       } catch (e) { console.error(e); }
 
-      const row = createRow([new ButtonBuilder().setCustomId(`vc_join_click_${vcId}`).setLabel("ボイスチャンネルに参加").setStyle(ButtonStyle.Success)]);
+      const vcUrl = `https://discord.com/channels/${i.guildId}/${vcId}`;
 
       if (webhook) {
         // 同じ募集主でも連続してアイコンが表示されるように、名前の2文字目に不可視文字をランダムに挿入（トリム対策＆グループ化防止）
@@ -666,13 +666,12 @@ client.on(Events.InteractionCreate, async (i) => {
         const webhookName = nameChars.join('');
 
         await webhook.send({
-          content: desc,
+          content: `${desc}\n\n${vcUrl}`,
           username: webhookName,
-          avatarURL: i.member.displayAvatarURL({ dynamic: true }),
-          components: [row]
+          avatarURL: i.member.displayAvatarURL({ dynamic: true })
         });
       } else {
-        await ch.send({ content: desc, components: [row] });
+        await ch.send({ content: `${desc}\n\n${vcUrl}` });
       }
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
