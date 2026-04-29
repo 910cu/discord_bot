@@ -623,15 +623,14 @@ client.on(Events.InteractionCreate, async (i) => {
       const gender = genderMode.get(vc.id);
       const safeComment = comment.replace(/\n/g, " ");
 
-      let desc = `***\n`;
-      desc += `募集内容: ${content}\n`;
+      let desc = `募集内容: ${content}\n`;
       desc += `日時: ${time}\n`;
       desc += `場所: <#${vcId}>\n`;
       if (mentionStr) desc += `メンション: ${mentionStr}\n`;
       if (limit > 0) desc += `上限: ${limit}人\n`;
       if (gender === "male") desc += `制限: ♂️ 男性専用\n`;
       else if (gender === "female") desc += `制限: ♀️ 女性専用\n`;
-      desc += `一言: ${safeComment}\n***`;
+      desc += `一言: ${safeComment}`;
 
       const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
 
@@ -667,12 +666,12 @@ client.on(Events.InteractionCreate, async (i) => {
         const webhookName = nameChars.join('');
 
         await webhook.send({
-          content: `${desc}\n\n${vcUrl}`,
+          content: `${desc}\n${vcUrl}`,
           username: webhookName,
           avatarURL: i.member.displayAvatarURL({ dynamic: true })
         });
       } else {
-        await ch.send({ content: `${desc}\n\n${vcUrl}` });
+        await ch.send({ content: `${desc}\n${vcUrl}` });
       }
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
