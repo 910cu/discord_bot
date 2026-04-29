@@ -633,12 +633,14 @@ client.on(Events.InteractionCreate, async (i) => {
       else if (gender === "female") desc += `制限: ♀️ 女性専用\n`;
       desc += `一言: ${safeComment}`;
 
-      const embed = new EmbedBuilder()
-        .setColor(0x57F287)
-        .setThumbnail(i.member.displayAvatarURL({ dynamic: true, size: 256 }))
-        .setDescription(desc);
-
       const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
+
+      // 古い募集メッセージ（Embed付きのもの）を一旦お掃除する
+      try {
+        const msgs = await ch.messages.fetch({ limit: 20 });
+        const oldEmbeds = msgs.filter(m => m.author.id === i.client.user.id && m.embeds.length > 0);
+        for (const [id, m] of oldEmbeds) await m.delete().catch(() => { });
+      } catch (e) { }
 
       // 1. 通知（Ping）だけを飛ばして即座に削除する（ゴーストピン）
       if (mentionStr) {
@@ -647,9 +649,8 @@ client.on(Events.InteractionCreate, async (i) => {
           .catch(() => { });
       }
 
-      // 2. 詳細（Embed）と参加ボタン（URL直接リンク）の送信
-      const row = createRow([new ButtonBuilder().setLabel("ボイスチャンネルに参加").setStyle(ButtonStyle.Link).setURL(link)]);
-      await ch.send({ embeds: [embed], components: [row] });
+      // 2. テキスト本文のみの送信（ボタン等の縁がある要素はすべて排除）
+      await ch.send({ content: desc });
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
