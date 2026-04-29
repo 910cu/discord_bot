@@ -546,8 +546,9 @@ client.on(Events.InteractionCreate, async (i) => {
       ));
     }
     if (cid === "config_recruit_role_id") {
+      const currentVal = (g.dynamicVC.recruitmentRoleIds?.length > 0) ? g.dynamicVC.recruitmentRoleIds.join(", ") : (g.dynamicVC.recruitmentRoleId || "");
       return i.showModal(new ModalBuilder().setCustomId("recruit_role_id_modal").setTitle("募集ロールID設定").addComponents(
-        createRow([new TextInputBuilder().setCustomId("rid").setLabel("募集ロールID").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.recruitmentRoleId || "").setPlaceholder("ロールIDを入力").setRequired(true)])
+        createRow([new TextInputBuilder().setCustomId("rid").setLabel("募集ロールID (複数可, カンマ区切り)").setStyle(TextInputStyle.Short).setValue(currentVal).setPlaceholder("例: 1234567, 8901234").setRequired(false)])
       ));
     }
     if (cid === "config_recruit_defaults") {
@@ -730,7 +731,8 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     if (cid === "recruit_role_id_modal") {
       const val = i.fields.getTextInputValue("rid").trim();
-      await updateGuildConfig(gid, { $set: { "dynamicVC.recruitmentRoleId": val || null } });
+      const ids = val ? val.split(/[,\s]+/).filter(id => id.match(/^\d+$/)) : [];
+      await updateGuildConfig(gid, { $set: { "dynamicVC.recruitmentRoleIds": ids, "dynamicVC.recruitmentRoleId": null } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "recruit", updatedG));
     }
