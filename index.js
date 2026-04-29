@@ -643,6 +643,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const vcUrl = `https://discord.com/channels/${i.guildId}/${vcId}`;
       desc += `場所: ${vcUrl}\n`;
       if (mentionStr) desc += `メンション: ${mentionStr}\n`;
+      if (lockedVCs.has(vc.id)) desc += `状態: 🔒 ロック中 (参加前にノックが必要です)\n`;
       if (limit > 0) desc += `上限: ${limit}人\n`;
       if (gender === "male") desc += `制限: ♂️ 男性専用\n`;
       else if (gender === "female") desc += `制限: ♀️ 女性専用\n`;
