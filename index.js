@@ -240,10 +240,11 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       },
       recruit: {
         title: "📢 メンバー募集設定",
-        desc: `- 📢 募集板: ${dynamicVC.recruitmentChannelId ? `<#${dynamicVC.recruitmentChannelId}>` : "`未設定`"}\n- 🔔 募集ロール: ${(dynamicVC.recruitmentRoleIds?.length > 0) ? dynamicVC.recruitmentRoleIds.map(id => `<@&${id}>`).join(" ") : (dynamicVC.recruitmentRoleId ? `<@&${dynamicVC.recruitmentRoleId}>` : "`未設定`")}\n\nVC内から募集メッセージを投稿できる機能です。`,
+        desc: `- 📢 募集板: ${dynamicVC.recruitmentChannelId ? `<#${dynamicVC.recruitmentChannelId}>` : "`未設定`"}\n- 🔔 募集ロール: ${(dynamicVC.recruitmentRoleIds?.length > 0) ? dynamicVC.recruitmentRoleIds.map(id => `<@&${id}>`).join(" ") : (dynamicVC.recruitmentRoleId ? `<@&${dynamicVC.recruitmentRoleId}>` : "`未設定`")}\n- 📝 初期値: \`${dynamicVC.defaultRecruitContent || "雑談"}\` / \`${dynamicVC.defaultRecruitTime || "いまから"}\`\n\nVC内から募集メッセージを投稿できる機能です。`,
         feature: "recruitEnabled", toggle: "toggle_recruit", label: "募集機能",
         extraBtn: createBtn("config_recruit_id", "🆔 チャンネルID設定", ButtonStyle.Primary),
         extraBtn2: createBtn("config_recruit_role_id", "🆔 ロールID設定", ButtonStyle.Primary),
+        extraBtn3: createBtn("config_recruit_defaults", "📝 初期値設定", ButtonStyle.Primary),
         selects: [
           { id: "select_cfg_recruit", ph: "📢 募集板チャンネルを選択", type: [ChannelType.GuildText] },
           { id: "select_cfg_recruit_role", ph: "🔔 募集ロールを選択 (複数可)", role: true, multi: true }
@@ -549,6 +550,12 @@ client.on(Events.InteractionCreate, async (i) => {
         createRow([new TextInputBuilder().setCustomId("rid").setLabel("募集ロールID").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.recruitmentRoleId || "").setPlaceholder("ロールIDを入力").setRequired(true)])
       ));
     }
+    if (cid === "config_recruit_defaults") {
+      return i.showModal(new ModalBuilder().setCustomId("recruit_defaults_modal").setTitle("募集時の初期値設定").addComponents(
+        createRow([new TextInputBuilder().setCustomId("def_content").setLabel("募集内容の初期値").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.defaultRecruitContent || "雑談").setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("def_time").setLabel("日時の初期値").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.defaultRecruitTime || "いまから").setRequired(true)])
+      ));
+    }
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled", toggle_recruit: "recruitEnabled" };
     if (toggles[cid]) {
       const key = toggles[cid];
@@ -609,7 +616,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const parts = cid.replace("rmodal_", "").split("_");
       const mentionVal = parts[0];
       const vcId = parts[1];
-      const content = i.fields.getTextInputValue("content"), time = i.fields.getTextInputValue("time"), comment = i.fields.getTextInputValue("comment") || "なし";
+      const content = i.fields.getTextInputValue("content"), time = i.fields.getTextInputValue("time"), comment = i.fields.getTextInputValue("comment");
       const vc = i.guild.channels.cache.get(vcId); if (!vc) return silentReply(i);
       const ch = i.guild.channels.cache.get(g.dynamicVC.recruitmentChannelId); if (!ch) return silentReply(i);
 
@@ -621,7 +628,6 @@ client.on(Events.InteractionCreate, async (i) => {
 
       const limit = vc.userLimit ?? 0;
       const gender = genderMode.get(vc.id);
-      const safeComment = comment.replace(/\n/g, " ");
 
       let desc = `募集内容: ${content}\n`;
       desc += `日時: ${time}\n`;
@@ -631,7 +637,8 @@ client.on(Events.InteractionCreate, async (i) => {
       if (limit > 0) desc += `上限: ${limit}人\n`;
       if (gender === "male") desc += `制限: ♂️ 男性専用\n`;
       else if (gender === "female") desc += `制限: ♀️ 女性専用\n`;
-      desc += `一言: ${safeComment}`;
+      if (comment) desc += `一言: ${comment.replace(/\n/g, " ")}`;
+      desc = desc.trim();
 
       const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
 
@@ -726,7 +733,13 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateGuildConfig(gid, { $set: { "dynamicVC.recruitmentRoleId": val || null } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "recruit", updatedG));
-
+    }
+    if (cid === "recruit_defaults_modal") {
+      const defC = i.fields.getTextInputValue("def_content").trim();
+      const defT = i.fields.getTextInputValue("def_time").trim();
+      await updateGuildConfig(gid, { $set: { "dynamicVC.defaultRecruitContent": defC, "dynamicVC.defaultRecruitTime": defT } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "recruit", updatedG));
     }
   }
 
@@ -736,8 +749,8 @@ client.on(Events.InteractionCreate, async (i) => {
       const vcId = i.customId.replace(isRole ? "rmnu_rol_" : "rmnu_str_", "");
       const mentionVal = i.values[0];
       return i.showModal(new ModalBuilder().setCustomId(`rmodal_${mentionVal}_${vcId}`).setTitle("メンバー募集").addComponents(
-        createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setRequired(true)]),
-        createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue("いまから").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("content").setLabel("【募集内容】").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.defaultRecruitContent || "雑談").setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("time").setLabel("【日時】").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.defaultRecruitTime || "いまから").setRequired(false)]),
         createRow([new TextInputBuilder().setCustomId("comment").setLabel("【一言】").setStyle(TextInputStyle.Paragraph).setRequired(false)])
       ));
     }
