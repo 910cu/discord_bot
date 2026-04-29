@@ -477,7 +477,7 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     if (cid.startsWith("vc_join_click_")) {
       const vid = cid.replace("vc_join_click_", "");
-      return i.reply({ content: `以下のリンクからVCに参加できます：\nhttps://discord.com/channels/${gid}/${vid}`, ephemeral: true });
+      return i.reply({ content: `https://discord.com/channels/${gid}/${vid}`, ephemeral: true });
     }
     if (cid === "cfg_btn_refresh") {
       await i.reply({ content: "♻️ パネルを再送信しています...", ephemeral: true });
@@ -656,7 +656,7 @@ client.on(Events.InteractionCreate, async (i) => {
         if (!webhook) webhook = await ch.createWebhook({ name: "VC Recruitment", avatar: i.client.user.displayAvatarURL() });
       } catch (e) { console.error(e); }
 
-      const row = createRow([new ButtonBuilder().setLabel("ボイスチャンネルに参加").setStyle(ButtonStyle.Link).setURL(link)]);
+      const row = createRow([new ButtonBuilder().setCustomId(`vc_join_click_${vcId}`).setLabel("ボイスチャンネルに参加").setStyle(ButtonStyle.Success)]);
 
       if (webhook) {
         // 同じ募集主でも連続してアイコンが表示されるように、名前の2文字目に不可視文字をランダムに挿入（トリム対策＆グループ化防止）
