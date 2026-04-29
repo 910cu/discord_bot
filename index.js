@@ -627,13 +627,14 @@ client.on(Events.InteractionCreate, async (i) => {
       desc += `- 募集内容: \`${content}\`\n`;
       desc += `- 日時: \`${time}\`\n`;
       desc += `- 場所: <#${vcId}>\n`;
+      if (mentionStr) desc += `- メンション: ${mentionStr}\n`;
       if (limit > 0) desc += `- 上限: \`${limit}人\`\n`;
       if (gender === "male") desc += `- 制限: \`♂️ 男性専用\`\n`;
       else if (gender === "female") desc += `- 制限: \`♀️ 女性専用\`\n`;
       desc += `- 一言: \`${safeComment}\``;
 
       const embed = new EmbedBuilder()
-        .setColor(0x2b2d31)
+        .setColor(0x57F287)
         .setDescription(desc);
 
       const link = `https://discord.com/channels/${i.guildId}/${vcId}`;
