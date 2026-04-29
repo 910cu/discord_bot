@@ -648,13 +648,25 @@ client.on(Events.InteractionCreate, async (i) => {
           .catch(() => { });
       }
 
-      // 2. 縁が見えないEmbedを作成して、募集主のアイコンを表示する
-      const embed = new EmbedBuilder()
-        .setColor(0x2b2d31)
-        .setAuthor({ name: `募集主: ${i.member.displayName}`, iconURL: i.member.displayAvatarURL({ dynamic: true }) })
-        .setDescription(desc);
+      // 2. Webhookを利用して募集主本人のアイコンと名前でプレーンテキストとして送信
+      let webhook = null;
+      try {
+        const webhooks = await ch.fetchWebhooks();
+        webhook = webhooks.find(wh => wh.owner && wh.owner.id === i.client.user.id);
+        if (!webhook) webhook = await ch.createWebhook({ name: "VC Recruitment", avatar: i.client.user.displayAvatarURL() });
+      } catch (e) { console.error(e); }
 
-      await ch.send({ embeds: [embed] });
+      if (webhook) {
+        // 同じ募集主でも連続してアイコンが表示されるようにゼロ幅スペースをランダムに追加（グループ化防止）
+        const randomZws = "\u200B".repeat(Math.floor(Math.random() * 5) + 1);
+        await webhook.send({
+          content: desc,
+          username: `${i.member.displayName} (募集)${randomZws}`,
+          avatarURL: i.member.displayAvatarURL({ dynamic: true })
+        });
+      } else {
+        await ch.send({ content: desc });
+      }
       return i.update({ content: "✅ 募集を投稿しました！", components: [] });
     }
     if (cid.startsWith("limit_modal_")) { const vc = i.guild.channels.cache.get(cid.replace("limit_modal_", "")), val = parseInt(i.fields.getTextInputValue("limit")); await silentReply(i); if (vc && !isNaN(val)) { await vc.setUserLimit(val); await sendOrUpdateControlPanel(vc); } }
