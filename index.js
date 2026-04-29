@@ -22,7 +22,6 @@ const {
 } = require("discord.js");
 const fs = require("fs");
 const mongoose = require("mongoose");
-const googleTTS = require("google-tts-api");
 const https = require("https");
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require("@discordjs/voice");
 
@@ -92,6 +91,56 @@ const tempChannels = new Set(), controlPanelMsgIds = new Map(), vcOwners = new M
 const guildCache = new Map();
 const recruitSelections = new Map();
 const ttsPlayers = new Map();
+
+// ─── VOICEVOX スピーカー定義 ───────────────────────────────────────────────────
+const VOICEVOX_SPEAKERS = [
+  { label: "ずんだもん (ノーマル)", value: "3" },
+  { label: "ずんだもん (あまあま)", value: "1" },
+  { label: "ずんだもん (ツンツン)", value: "7" },
+  { label: "ずんだもん (セクシー)", value: "5" },
+  { label: "ずんだもん (ささやき)", value: "22" },
+  { label: "ずんだもん (ヒソヒソ)", value: "38" },
+  { label: "四国めたん (ノーマル)", value: "2" },
+  { label: "四国めたん (あまあま)", value: "0" },
+  { label: "四国めたん (ツンツン)", value: "6" },
+  { label: "四国めたん (セクシー)", value: "4" },
+  { label: "春日部つむぎ", value: "8" },
+  { label: "雨晴はう", value: "10" },
+  { label: "波音リツ", value: "9" },
+  { label: "玄野武宏 (ノーマル)", value: "11" },
+  { label: "白上虎太郎 (ノーマル)", value: "12" },
+  { label: "青山龍星 (ノーマル)", value: "13" },
+  { label: "冥鳴ひまり (ノーマル)", value: "14" },
+  { label: "九州そら (ノーマル)", value: "16" },
+  { label: "もち子さん (ノーマル)", value: "20" },
+  { label: "剣崎雌雄 (ノーマル)", value: "21" },
+  { label: "WhiteCUL (ノーマル)", value: "23" },
+  { label: "後鬼 (人間)", value: "27" },
+  { label: "No.7 (ノーマル)", value: "29" },
+  { label: "ちび式じい (ノーマル)", value: "42" },
+  { label: "櫻歌ミコ (ノーマル)", value: "43" },
+];
+const getSpeakerName = (id) => VOICEVOX_SPEAKERS.find(s => s.value === String(id))?.label || `スピーカーID: ${id}`;
+
+function fetchVoicevoxAudio(text, speakerId) {
+  return new Promise((resolve, reject) => {
+    const encodedText = encodeURIComponent(text);
+    const apiUrl = `https://api.tts.quest/v3/voicevox/synthesis?speaker=${speakerId}&text=${encodedText}`;
+    https.get(apiUrl, (res) => {
+      let data = "";
+      res.on("data", c => data += c);
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.mp3StreamingUrl) resolve(json.mp3StreamingUrl);
+          else if (json.mp3DownloadUrl) resolve(json.mp3DownloadUrl);
+          else if (json.wavDownloadUrl) resolve(json.wavDownloadUrl);
+          else reject(new Error("No audio URL in response"));
+        } catch (e) { reject(e); }
+      });
+    }).on("error", reject);
+  });
+}
 
 // ─── データ管理ユーティリティ ──────────────────────────────────────────────────
 const defaultFeatures = {
@@ -212,11 +261,12 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     let subDesc = "### 🎙️ VC内機能設定\n各機能の詳細設定や有効化・無効化が行えます。\n\n";
     subDesc += `**💤 AFK (寝落ち)** [ ${fStatus("afkEnabled")} ]\n┕ 移動先: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**🖼️ 自己紹介表示** [ ${fStatus("vcIntroDisplayEnabled")} ]\n┕ ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥"}\n\n`;
-    subDesc += `**🚻 部屋制限** [ ${fStatus("genderRoleEnabled")} ]\n┕ ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定` 🟥"}\n┕ ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定` 🟥"}\n`;
+    subDesc += `**🚻 部屋制限** [ ${fStatus("genderRoleEnabled")} ]\n┕ ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定` 🟥"}\n┕ ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定` 🟥"}\n\n`;
+    subDesc += `**🗣️ 読み上げ音声**: \`${getSpeakerName(dynamicVC.ttsSpeakerId || "3")}\`\n`;
     embed.setTitle(null).setDescription(subDesc);
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled")), createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled"))]),
-      createRow([createBtn("cfg_btn_recruit", "📢 募集機能", bStyle("recruitEnabled")), createBtn("cfg_back_main", "⬅️ 戻る")])
+      createRow([createBtn("cfg_btn_recruit", "📢 募集機能", bStyle("recruitEnabled")), createBtn("cfg_btn_tts_voice", "🗣️ 読上音声", ButtonStyle.Secondary), createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else {
     const configs = {
@@ -328,7 +378,8 @@ async function buildPanelPayload(vc) {
   const g = await getGuildConfig(vc.guildId);
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, limit = vc.userLimit ?? 0, ownerId = vcOwners.get(vc.id), isFixed = limitLockedVCs.has(vc.id);
   const isTTS = ttsPlayers.has(vc.id);
-  const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setTitle("🎙️ VC Control Interface").setDescription(`**部屋主** : <@${ownerId}>\n\n**現在の設定**\n- 状態: ${locked ? "🔒 ロック中" : "🔓 公開中"}\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 動作中" : "🔴 停止中"}\``);
+  const speakerLabel = getSpeakerName(g.dynamicVC.ttsSpeakerId || "3");
+  const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setTitle("🎙️ VC Control Interface").setDescription(`**部屋主** : <@${ownerId}>\n\n**現在の設定**\n- 状態: ${locked ? "🔒 ロック中" : "🔓 公開中"}\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 " + speakerLabel : "🔴 停止中"}\``);
   const ttsBtn = createBtn(`vc_tts_toggle_${vc.id}`, isTTS ? "🔇 読上停止" : "🗣️ 読上開始", isTTS ? ButtonStyle.Danger : ButtonStyle.Primary);
 
   if (isFixed) {
@@ -410,6 +461,15 @@ async function createDynamicVC(guild, member, name, limit, g) {
 }
 
 // ─── 読み上げ (TTS) メッセージ処理 ──────────────────────────────────────────
+async function playTTS(state, text, speakerId) {
+  try {
+    const audioUrl = await fetchVoicevoxAudio(text, speakerId);
+    https.get(audioUrl, (res) => {
+      state.player.play(createAudioResource(res));
+    }).on('error', () => { state.isPlaying = false; });
+  } catch (e) { console.error("TTS再生エラー:", e); state.isPlaying = false; }
+}
+
 client.on(Events.MessageCreate, async (m) => {
   if (m.author.bot || !m.guild) return;
   if (m.channel.type === ChannelType.GuildVoice) {
@@ -419,14 +479,13 @@ client.on(Events.MessageCreate, async (m) => {
       text = text.replace(/<@!?\d+>/g, "メンション").replace(/<#\d+>/g, "チャンネル").replace(/<@&\d+>/g, "ロール").replace(/https?:\/\/[^\s]+/g, "URL");
       if (text.length > 100) text = text.slice(0, 100) + "以下略";
       if (text.trim() === "") return;
-      try {
-        const url = googleTTS.getAudioUrl(text, { lang: "ja", slow: false, host: "https://translate.google.com" });
-        if (state.isPlaying) state.queue.push(url);
-        else {
-          state.isPlaying = true;
-          https.get(url, (res) => { state.player.play(createAudioResource(res)); }).on('error', () => { state.isPlaying = false; });
-        }
-      } catch (e) { console.error(e); }
+      const g = await getGuildConfig(m.guild.id);
+      const speakerId = g.dynamicVC.ttsSpeakerId || "3";
+      if (state.isPlaying) state.queue.push({ text, speakerId });
+      else {
+        state.isPlaying = true;
+        await playTTS(state, text, speakerId);
+      }
     }
   }
 });
@@ -538,8 +597,8 @@ client.on(Events.InteractionCreate, async (i) => {
             const state = ttsPlayers.get(vc.id);
             if (!state) return;
             if (state.queue.length > 0) {
-              const nextUrl = state.queue.shift();
-              https.get(nextUrl, (res) => { state.player.play(createAudioResource(res)); }).on('error', () => { state.isPlaying = false; });
+              const next = state.queue.shift();
+              playTTS(state, next.text, next.speakerId);
             } else state.isPlaying = false;
           });
           await sendOrUpdateControlPanel(vc);
@@ -596,6 +655,12 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.reply({ content: `### 📋 承認済みユーザー (最新100件)\n${desc.length > 1900 ? desc.substring(0, 1900) + "\n...その他" : desc}`, ephemeral: true });
     }
     if (cid === "cfg_btn_auto_delete") return i.showModal(new ModalBuilder().setCustomId("auto_delete_modal").setTitle("削除タイマー設定").addComponents(createRow([new TextInputBuilder().setCustomId("minutes").setLabel("空室削除までの時間 (分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.autoDeleteMinutes || 5)).setRequired(true)])));
+    if (cid === "cfg_btn_tts_voice") {
+      const currentId = g.dynamicVC.ttsSpeakerId || "3";
+      const menu = new StringSelectMenuBuilder().setCustomId("select_tts_voice").setPlaceholder("読み上げの声を選択");
+      VOICEVOX_SPEAKERS.forEach(s => menu.addOptions({ label: s.label, value: s.value, default: s.value === currentId }));
+      return i.reply({ content: "### 🗣️ 読み上げ音声の選択\n使用するVOICEVOXキャラクターを選んでください。", components: [createRow([menu])], ephemeral: true });
+    }
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", ""), g));
 
     if (cid === "config_roles_id") {
@@ -818,6 +883,11 @@ client.on(Events.InteractionCreate, async (i) => {
   }
 
   if (i.isAnySelectMenu()) {
+    if (i.customId === "select_tts_voice") {
+      const selected = i.values[0];
+      await updateGuildConfig(gid, { $set: { "dynamicVC.ttsSpeakerId": selected } });
+      return i.update({ content: `### 🗣️ 読み上げ音声を変更しました\n\`${getSpeakerName(selected)}\` に設定しました！`, components: [] });
+    }
     if (i.customId.startsWith("rmnu_str_") || i.customId.startsWith("rmnu_rol_")) {
       const isRole = i.customId.startsWith("rmnu_rol_");
       const vcId = i.customId.replace(isRole ? "rmnu_rol_" : "rmnu_str_", "");
