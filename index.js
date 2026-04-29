@@ -23,6 +23,7 @@ const {
 const fs = require("fs");
 const mongoose = require("mongoose");
 const googleTTS = require("google-tts-api");
+const https = require("https");
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require("@discordjs/voice");
 
 // ─── 環境変数と基本設定 ────────────────────────────────────────────────────────
@@ -423,7 +424,7 @@ client.on(Events.MessageCreate, async (m) => {
         if (state.isPlaying) state.queue.push(url);
         else {
           state.isPlaying = true;
-          state.player.play(createAudioResource(url));
+          https.get(url, (res) => { state.player.play(createAudioResource(res)); }).on('error', () => { state.isPlaying = false; });
         }
       } catch (e) { console.error(e); }
     }
@@ -536,8 +537,10 @@ client.on(Events.InteractionCreate, async (i) => {
           player.on(AudioPlayerStatus.Idle, () => {
             const state = ttsPlayers.get(vc.id);
             if (!state) return;
-            if (state.queue.length > 0) state.player.play(createAudioResource(state.queue.shift()));
-            else state.isPlaying = false;
+            if (state.queue.length > 0) {
+              const nextUrl = state.queue.shift();
+              https.get(nextUrl, (res) => { state.player.play(createAudioResource(res)); }).on('error', () => { state.isPlaying = false; });
+            } else state.isPlaying = false;
           });
           await sendOrUpdateControlPanel(vc);
           return i.reply({ content: "🗣️ 読み上げを開始しました！このVC専用のテキストチャットに書き込んだ内容を読み上げます。", ephemeral: true });
@@ -902,8 +905,9 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   }
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
-    if (ch?.members.size === 0) { try { await ch.delete();[tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); } catch { } }
-    else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = ch.members.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch); } }
+    const realMembers = ch?.members.filter(m => !m.user.bot);
+    if (realMembers?.size === 0) { try { await ch.delete();[tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); } catch { } }
+    else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = realMembers.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch); } }
   }
 });
 
