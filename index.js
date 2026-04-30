@@ -158,7 +158,8 @@ const defaultDynamicVC = {
   channelName5: "雑談5人部屋",
   introWarnMinutes: 2880,
   introKickMinutes: 4320,
-  autoDeleteMinutes: 5
+  autoDeleteMinutes: 5,
+  vcSlots: [] // 動的VCスロット [{name, limit, triggerChannelId, locked?}]
 };
 
 async function getGuildConfig(gid, forceRefresh = false) {
@@ -274,14 +275,10 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       panel: { title: "🎫 VC作成チャンネル設定", desc: `- 🎫 設置先: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定`"}\n- 📂 作成先カテゴリ: ${dynamicVC.cleanupCategoryId ? `<#${dynamicVC.cleanupCategoryId}>` : "`未設定`"}\n\nボタンを押して新しいVCを作成できるパネルを設置します。`, feature: "vcPanelEnabled", toggle: "toggle_panel", label: "作成パネル", selects: [{ id: "select_cfg_panel", ph: "🎫 設置先を選択", type: [ChannelType.GuildText] }, { id: "select_cfg_category", ph: "📂 作成先カテゴリを選択", type: [ChannelType.GuildCategory] }], back: "ch_features" },
       trigger: {
         title: "➕ ＶＣチャンネル自動作成 設定",
-        desc: `- 自由枠 ─ ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定`"} (\`${dynamicVC.channelName}\`)\n- 4人部屋 ─ ${dynamicVC.triggerChannelId4 ? `<#${dynamicVC.triggerChannelId4}>` : "`未設定`"} (\`${dynamicVC.channelName4 || "雑談4人部屋"}\`)\n- 5人部屋 ─ ${dynamicVC.triggerChannelId5 ? `<#${dynamicVC.triggerChannelId5}>` : "`未設定`"} (\`${dynamicVC.channelName5 || "雑談5人部屋"}\`)\n\n特定のチャンネルに入室した際、自動で新しいVCを作成します。`,
+        desc: buildTriggerDesc(dynamicVC, client.guilds.cache.get(gid)),
         feature: "vcCreationEnabled", toggle: "toggle_vc_creation", label: "自動作成",
-        extraBtn: createBtn("config_trigger_names", "📛 部屋名設定", ButtonStyle.Primary),
-        selects: [
-          { id: "select_cfg_trigger", ph: "➕ 自由枠トリガーを選択", type: [ChannelType.GuildVoice] },
-          { id: "select_cfg_trigger4", ph: "👥 4人部屋トリガーを選択", type: [ChannelType.GuildVoice] },
-          { id: "select_cfg_trigger5", ph: "👥 5人部屋トリガーを選択", type: [ChannelType.GuildVoice] }
-        ], back: "ch_features"
+        extraBtn: createBtn("cfg_trigger_add_slot", "➕ スロット追加", ButtonStyle.Primary),
+        back: "ch_features"
       },
       intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), extraBtn3: createBtn("cfg_intro_list", "📋 承認済みリスト", ButtonStyle.Secondary), selects: [{ id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, { id: "select_cfg_intro_add", ph: "👤 手動で承認ユーザーを追加", user: true, multi: true }], back: "ch_features" },
       intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelIds?.length > 0 ? dynamicVC.introSourceChannelIds.map(id => `<#${id}>`).join(", ") : (dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥")}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択 (複数可)", type: [ChannelType.GuildText], multi: true }, back: "vc_features" },
@@ -317,19 +314,53 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     if (configs.extraBtn3) row1Btns.push(configs.extraBtn3); // 常に有効化
     components.push(createRow(row1Btns));
 
-    (configs.selects || [configs.select]).filter(Boolean).forEach(s => {
-      let menu;
-      if (s.role) menu = new RoleSelectMenuBuilder();
-      else if (s.user) menu = new UserSelectMenuBuilder();
-      else menu = new ChannelSelectMenuBuilder().setChannelTypes(s.type);
-      if (s.multi) menu.setMaxValues(25);
-      const canUse = isEnabled || s.user;
-      components.push(createRow([menu.setCustomId(s.id).setPlaceholder(canUse ? s.ph : "⛔ 無効なため設定不可").setDisabled(!canUse)]));
-    });
+    // triggerの場合はスロット一覧ボタンを追加
+    if (type === "trigger") {
+      const slots = dynamicVC.vcSlots || [];
+      if (slots.length > 0) {
+        // スロットを最大4つずつの行に分けて表示
+        const slotBtns = slots.map((s, idx) => {
+          const chName = s.triggerChannelId ? (client.guilds.cache.get(gid)?.channels.cache.get(s.triggerChannelId)?.name || `CH:${s.triggerChannelId}`) : "未設定";
+          const limitLabel = s.limit === 0 ? "∞" : `${s.limit}人`;
+          return createBtn(`cfg_trigger_slot_${idx}`, `${s.name} (${limitLabel}) | #${chName}`, ButtonStyle.Secondary);
+        });
+        // 5つずつ行を分ける
+        for (let r = 0; r < slotBtns.length; r += 5) {
+          components.push(createRow(slotBtns.slice(r, r + 5)));
+        }
+      }
+    } else {
+      (configs.selects || [configs.select]).filter(Boolean).forEach(s => {
+        let menu;
+        if (s.role) menu = new RoleSelectMenuBuilder();
+        else if (s.user) menu = new UserSelectMenuBuilder();
+        else menu = new ChannelSelectMenuBuilder().setChannelTypes(s.type);
+        if (s.multi) menu.setMaxValues(25);
+        const canUse = isEnabled || s.user;
+        components.push(createRow([menu.setCustomId(s.id).setPlaceholder(canUse ? s.ph : "⛔ 無効なため設定不可").setDisabled(!canUse)]));
+      });
+    }
     const backId = configs.back ? `cfg_btn_${configs.back}` : "cfg_back_main";
     components.push(createRow([createBtn(backId, "⬅️ 戻る")]));
   }
   return { embeds: [embed], components, ephemeral: true, flags: [MessageFlags.SuppressNotifications] };
+}
+
+// ─── VCスロット説明文生成 ─────────────────────────────────────────────────────
+function buildTriggerDesc(dynamicVC, guild) {
+  const slots = dynamicVC.vcSlots || [];
+  let desc = "";
+  if (slots.length === 0) {
+    desc += "`スロットなし` — ➕ スロット追加ボタンで設定を作成してください。\n";
+  } else {
+    slots.forEach((s, idx) => {
+      const chMention = s.triggerChannelId ? `<#${s.triggerChannelId}>` : "`未設定`";
+      const limitLabel = s.limit === 0 ? "∞" : `${s.limit}人`;
+      desc += `**[${idx + 1}]** \`${s.name}\` (${limitLabel}) ─ ${chMention}\n`;
+    });
+  }
+  desc += "\n特定のチャンネルに入室した際、自動で新しいVCを作成します。";
+  return desc;
 }
 
 // ─── パネル更新 ──────────────────────────────────────────────────────────────
@@ -706,11 +737,27 @@ client.on(Events.InteractionCreate, async (i) => {
     }
 
     if (cid === "config_intro_time") return i.showModal(new ModalBuilder().setCustomId("intro_time_modal").setTitle("期限設定").addComponents(createRow([new TextInputBuilder().setCustomId("warn").setLabel("警告(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introWarnMinutes || 2880))]), createRow([new TextInputBuilder().setCustomId("kick").setLabel("キック(分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.introKickMinutes || 4320))])));
-    if (cid === "config_trigger_names") return i.showModal(new ModalBuilder().setCustomId("trigger_name_modal").setTitle("部屋名テンプレート設定").addComponents(
-      createRow([new TextInputBuilder().setCustomId("name_free").setLabel("自由枠 ({user}使用可)").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.channelName || "{user}のVC").setRequired(true)]),
-      createRow([new TextInputBuilder().setCustomId("name4").setLabel("4人部屋").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.channelName4 || "雑談4人部屋").setRequired(true)]),
-      createRow([new TextInputBuilder().setCustomId("name5").setLabel("5人部屋").setStyle(TextInputStyle.Short).setValue(g.dynamicVC.channelName5 || "雑談5人部屋").setRequired(true)])
-    ));
+    // スロット追加ボタン
+    if (cid === "cfg_trigger_add_slot") {
+      return i.showModal(new ModalBuilder().setCustomId("trigger_slot_add_modal").setTitle("VCスロット追加").addComponents(
+        createRow([new TextInputBuilder().setCustomId("slot_name").setLabel("部屋名 ({user}使用可)").setStyle(TextInputStyle.Short).setValue("{user}のVC").setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("slot_limit").setLabel("人数上限 (0=無制限)").setStyle(TextInputStyle.Short).setValue("0").setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("slot_trigger").setLabel("トリガーチャンネルID").setStyle(TextInputStyle.Short).setPlaceholder("VCチャンネルのIDを入力").setRequired(false)])
+      ));
+    }
+    // スロット編集ボタン (cfg_trigger_slot_{idx})
+    if (cid.startsWith("cfg_trigger_slot_")) {
+      const idx = parseInt(cid.replace("cfg_trigger_slot_", ""));
+      const slots = g.dynamicVC.vcSlots || [];
+      const slot = slots[idx];
+      if (!slot) return i.reply({ content: "❌ スロットが見つかりません。", ephemeral: true });
+      return i.showModal(new ModalBuilder().setCustomId(`trigger_slot_edit_modal_${idx}`).setTitle(`スロット[${idx+1}]編集`).addComponents(
+        createRow([new TextInputBuilder().setCustomId("slot_name").setLabel("部屋名 ({user}使用可)").setStyle(TextInputStyle.Short).setValue(slot.name || "{user}のVC").setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("slot_limit").setLabel("人数上限 (0=無制限)").setStyle(TextInputStyle.Short).setValue(String(slot.limit ?? 0)).setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("slot_trigger").setLabel("トリガーチャンネルID").setStyle(TextInputStyle.Short).setValue(slot.triggerChannelId || "").setPlaceholder("VCチャンネルのIDを入力 (空白で削除)").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("slot_delete").setLabel("削除する場合は \"delete\" と入力").setStyle(TextInputStyle.Short).setPlaceholder("削除しない場合は空白のままで").setRequired(false)])
+      ));
+    }
     if (cid === "config_messages") return i.reply({ content: "編集カテゴリ選択", components: [createRow([createBtn("msg_modal_intro", "自己紹介関連", ButtonStyle.Primary), createBtn("msg_modal_vc", "VC関連", ButtonStyle.Primary)])], ephemeral: true });
     if (cid.startsWith("msg_modal_")) {
       const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"], labels = isIntro ? ["確認通知", "期限警告", "未記入キックDM"] : ["上限固定エラー", "男性専用エラーDM", "女性専用エラーDM"];
@@ -830,12 +877,36 @@ client.on(Events.InteractionCreate, async (i) => {
 
       }
     }
-    if (cid === "trigger_name_modal") {
-      const nf = i.fields.getTextInputValue("name_free"), n4 = i.fields.getTextInputValue("name4"), n5 = i.fields.getTextInputValue("name5");
-      await updateGuildConfig(gid, { $set: { "dynamicVC.channelName": nf, "dynamicVC.channelName4": n4, "dynamicVC.channelName5": n5 } });
+    // スロット追加モーダル
+    if (cid === "trigger_slot_add_modal") {
+      const slotName = i.fields.getTextInputValue("slot_name").trim();
+      const slotLimit = parseInt(i.fields.getTextInputValue("slot_limit")) || 0;
+      const slotTrigger = i.fields.getTextInputValue("slot_trigger").trim() || null;
+      const slots = [...(g.dynamicVC.vcSlots || [])];
+      slots.push({ name: slotName, limit: slotLimit, triggerChannelId: slotTrigger });
+      await updateGuildConfig(gid, { $set: { "dynamicVC.vcSlots": slots } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
-
+    }
+    // スロット編集・削除モーダル
+    if (cid.startsWith("trigger_slot_edit_modal_")) {
+      const idx = parseInt(cid.replace("trigger_slot_edit_modal_", ""));
+      const slots = [...(g.dynamicVC.vcSlots || [])];
+      if (idx < 0 || idx >= slots.length) return i.reply({ content: "❌ スロットが見つかりません。", ephemeral: true });
+      const deleteFlag = i.fields.getTextInputValue("slot_delete").trim().toLowerCase();
+      if (deleteFlag === "delete") {
+        slots.splice(idx, 1);
+        await updateGuildConfig(gid, { $set: { "dynamicVC.vcSlots": slots } });
+        const updatedG = await getGuildConfig(gid, true);
+        return i.update(await getSettingsPayload(gid, "trigger", updatedG));
+      }
+      const slotName = i.fields.getTextInputValue("slot_name").trim();
+      const slotLimit = parseInt(i.fields.getTextInputValue("slot_limit")) || 0;
+      const slotTrigger = i.fields.getTextInputValue("slot_trigger").trim() || null;
+      slots[idx] = { name: slotName, limit: slotLimit, triggerChannelId: slotTrigger };
+      await updateGuildConfig(gid, { $set: { "dynamicVC.vcSlots": slots } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "trigger", updatedG));
     }
     if (cid.startsWith("msg_submit_")) {
       const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"];
@@ -935,17 +1006,19 @@ client.on(Events.InteractionCreate, async (i) => {
 client.on(Events.VoiceStateUpdate, async (o, n) => {
   const gid = n.guild.id;
   const g = await getGuildConfig(gid);
-  const triggers = [g.dynamicVC.triggerChannelId, g.dynamicVC.triggerChannelId4, g.dynamicVC.triggerChannelId5];
+  // vcSlotsベースのトリガーチャンネル一覧を構築
+  const slots = g.dynamicVC.vcSlots || [];
+  const slotMap = new Map(slots.map(s => [s.triggerChannelId, s]));
 
-  if (n.channelId && triggers.includes(n.channelId) && g.features.vcCreationEnabled) {
-    const limit = n.channelId === triggers[1] ? 4 : n.channelId === triggers[2] ? 5 : 0;
-    const name = limit === 4 ? (g.dynamicVC.channelName4 || "雑談4人部屋") : limit === 5 ? (g.dynamicVC.channelName5 || "雑談5人部屋") : g.dynamicVC.channelName.replace("{user}", n.member.displayName);
+  if (n.channelId && slotMap.has(n.channelId) && g.features.vcCreationEnabled) {
+    const slot = slotMap.get(n.channelId);
+    const limit = slot.limit ?? 0;
+    const name = slot.name.replace("{user}", n.member.displayName);
     try {
-      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
+      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId || n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
       tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id);
       await n.member.voice.setChannel(vc);
       await sendOrUpdateControlPanel(vc);
-      // 設定された時間（デフォルト5分）タイマー
       const delMin = g.dynamicVC.autoDeleteMinutes || 5;
       setTimeout(() => checkAndCleanupVC(vc.id), delMin * 60 * 1000);
     } catch { }
