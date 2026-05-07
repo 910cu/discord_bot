@@ -824,12 +824,7 @@ client.on(Events.InteractionCreate, async (i) => {
         for (const [id, m] of oldEmbeds) await m.delete().catch(() => { });
       } catch (e) { }
 
-      // 1. 通知（Ping）だけを飛ばして即座に削除する（ゴーストピン）
-      if (mentionStr) {
-        await ch.send({ content: mentionStr, allowedMentions: { parse: ['users', 'roles', 'everyone'] } })
-          .then(m => m.delete().catch(() => { }))
-          .catch(() => { });
-      }
+
 
       // 2. Webhookを利用して募集主本人のアイコンと名前でプレーンテキストとして送信
       let webhook = null;
