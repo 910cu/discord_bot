@@ -409,7 +409,8 @@ async function buildPanelPayload(vc) {
   const g = await getGuildConfig(vc.guildId);
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, limit = vc.userLimit ?? 0, ownerId = vcOwners.get(vc.id), isFixed = limitLockedVCs.has(vc.id);
   const isTTS = ttsPlayers.has(vc.id);
-  const speakerLabel = getSpeakerName(g.dynamicVC.ttsSpeakerId || "3");
+  const ttsState = ttsPlayers.get(vc.id);
+  const speakerLabel = getSpeakerName(ttsState?.activeSpeakerId || g.dynamicVC.ttsSpeakerId || "3");
   const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setTitle("🎙️ VC Control Interface").setDescription(`**部屋主** : <@${ownerId}>\n\n**現在の設定**\n- 状態: ${locked ? "🔒 ロック中" : "🔓 公開中"}\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 " + speakerLabel : "🔴 停止中"}\``);
   const ttsBtn = createBtn(`vc_tts_toggle_${vc.id}`, isTTS ? "🔇 読上停止" : "🗣️ 読上開始", isTTS ? ButtonStyle.Danger : ButtonStyle.Primary);
 
@@ -420,11 +421,11 @@ async function buildPanelPayload(vc) {
   }
   const row1 = createRow([createBtn("vc_rename", "✏️ 名前変更"), createBtn("vc_toggle_lock", locked ? "🔓 解除" : "🔒 ロック", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 制限設定", ButtonStyle.Secondary, !g.features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled)]);
   const components = locked ? [row1, createRow([createBtn(`vc_knock_${vc.id}`, "🚪 ノックして参加申請", ButtonStyle.Success)])] : [row1];
-  
+
   const extRow = new ActionRowBuilder().addComponents(ttsBtn);
   if (g.features.recruitEnabled) extRow.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
   components.push(extRow);
-  
+
   return { embeds: [embed], components };
 }
 
@@ -475,7 +476,7 @@ async function createDynamicVC(guild, member, name, limit, g) {
       userLimit: limit,
       permissionOverwrites: [
         { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
-        { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }
+        { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }
       ]
     });
     tempChannels.add(vc.id);
@@ -511,7 +512,7 @@ client.on(Events.MessageCreate, async (m) => {
       if (text.length > 100) text = text.slice(0, 100) + "以下略";
       if (text.trim() === "") return;
       const g = await getGuildConfig(m.guild.id);
-      const speakerId = g.dynamicVC.ttsSpeakerId || "3";
+      const speakerId = state.activeSpeakerId || g.dynamicVC.ttsSpeakerId || "3";
       if (state.isPlaying) state.queue.push({ text, speakerId });
       else {
         state.isPlaying = true;
@@ -611,7 +612,9 @@ client.on(Events.InteractionCreate, async (i) => {
       return;
     }
     if (cid.startsWith("vc_tts_toggle_")) {
-      const vc = i.member.voice.channel; if (!vc || vcOwners.get(vc.id) !== i.user.id) return i.reply({ content: "VCオーナーのみ実行可能です。", ephemeral: true });
+      const targetVcId = cid.replace("vc_tts_toggle_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
       if (ttsPlayers.has(vc.id)) {
         const p = ttsPlayers.get(vc.id);
         if (p.connection) p.connection.destroy();
@@ -619,29 +622,16 @@ client.on(Events.InteractionCreate, async (i) => {
         await sendOrUpdateControlPanel(vc);
         return i.reply({ content: "🔇 読み上げを停止し、VCから退出しました。", ephemeral: true });
       } else {
-        try {
-          const connection = joinVoiceChannel({ channelId: vc.id, guildId: vc.guild.id, adapterCreator: vc.guild.voiceAdapterCreator });
-          const player = createAudioPlayer();
-          connection.subscribe(player);
-          ttsPlayers.set(vc.id, { player, queue: [], isPlaying: false, connection });
-          player.on(AudioPlayerStatus.Idle, () => {
-            const state = ttsPlayers.get(vc.id);
-            if (!state) return;
-            if (state.queue.length > 0) {
-              const next = state.queue.shift();
-              playTTS(state, next.text, next.speakerId);
-            } else state.isPlaying = false;
-          });
-          await sendOrUpdateControlPanel(vc);
-          return i.reply({ content: "🗣️ 読み上げを開始しました！このVC専用のテキストチャットに書き込んだ内容を読み上げます。", ephemeral: true });
-        } catch (e) {
-          console.error(e);
-          return i.reply({ content: "❌ 読み上げの開始に失敗しました。BOTに必要な権限があるか確認してください。", ephemeral: true });
-        }
+        const currentSpeaker = g.dynamicVC.ttsSpeakerId || "3";
+        const menu = new StringSelectMenuBuilder().setCustomId(`vc_tts_start_select_${vc.id}`).setPlaceholder("読み上げの声を選択して開始");
+        VOICEVOX_SPEAKERS.forEach(s => menu.addOptions({ label: s.label, value: s.value, description: s.value === currentSpeaker ? "現在のデフォルト" : "この声で読み上げを開始します" }));
+        return i.reply({ content: "### 🗣️ 読み上げ開始\n使用するVOICEVOXキャラクターを選んでください。", components: [createRow([menu])], ephemeral: true });
       }
     }
     if (cid.startsWith("vc_recruit_start_")) {
-      const vc = i.member.voice.channel; if (!vc || vcOwners.get(vc.id) !== i.user.id) return i.reply({ content: "VCオーナーのみ実行可能です。", ephemeral: true });
+      const targetVcId = cid.replace("vc_recruit_start_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
       if (!g.dynamicVC.recruitmentChannelId) return i.reply({ content: "募集板チャンネルが設定されていません。", ephemeral: true });
 
       const rolesIds = g.dynamicVC.recruitmentRoleIds || [];
@@ -751,7 +741,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const slots = g.dynamicVC.vcSlots || [];
       const slot = slots[idx];
       if (!slot) return i.reply({ content: "❌ スロットが見つかりません。", ephemeral: true });
-      return i.showModal(new ModalBuilder().setCustomId(`trigger_slot_edit_modal_${idx}`).setTitle(`スロット[${idx+1}]編集`).addComponents(
+      return i.showModal(new ModalBuilder().setCustomId(`trigger_slot_edit_modal_${idx}`).setTitle(`スロット[${idx + 1}]編集`).addComponents(
         createRow([new TextInputBuilder().setCustomId("slot_name").setLabel("部屋名 ({user}使用可)").setStyle(TextInputStyle.Short).setValue(slot.name || "{user}のVC").setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_limit").setLabel("人数上限 (0=無制限)").setStyle(TextInputStyle.Short).setValue(String(slot.limit ?? 0)).setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_trigger").setLabel("トリガーチャンネルID").setStyle(TextInputStyle.Short).setValue(slot.triggerChannelId || "").setPlaceholder("VCチャンネルのIDを入力 (空白で削除)").setRequired(false)]),
@@ -799,7 +789,7 @@ client.on(Events.InteractionCreate, async (i) => {
 
       let selections = recruitSelections.get(token) || ["none"];
       if (selections.length > 1 && selections.includes("none")) selections = selections.filter(s => s !== "none");
-      
+
       let mentionStr = "";
       if (!selections.includes("none")) {
         mentionStr = selections.map(val => {
@@ -954,6 +944,33 @@ client.on(Events.InteractionCreate, async (i) => {
   }
 
   if (i.isAnySelectMenu()) {
+    if (i.customId.startsWith("vc_tts_start_select_")) {
+      const targetVcId = i.customId.replace("vc_tts_start_select_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      
+      const selectedVoice = i.values[0];
+      
+      try {
+        const connection = joinVoiceChannel({ channelId: vc.id, guildId: vc.guild.id, adapterCreator: vc.guild.voiceAdapterCreator });
+        const player = createAudioPlayer();
+        connection.subscribe(player);
+        ttsPlayers.set(vc.id, { player, queue: [], isPlaying: false, connection, activeSpeakerId: selectedVoice });
+        player.on(AudioPlayerStatus.Idle, () => {
+          const state = ttsPlayers.get(vc.id);
+          if (!state) return;
+          if (state.queue.length > 0) {
+            const next = state.queue.shift();
+            playTTS(state, next.text, next.speakerId);
+          } else state.isPlaying = false;
+        });
+        await sendOrUpdateControlPanel(vc);
+        return i.update({ content: `🗣️ 読み上げを開始しました！このVC専用のテキストチャットに書き込んだ内容を \`${getSpeakerName(selectedVoice)}\` の声で読み上げます。`, components: [] });
+      } catch (e) {
+        console.error(e);
+        return i.update({ content: "❌ 読み上げの開始に失敗しました。BOTに必要な権限があるか確認してください。", components: [] });
+      }
+    }
     if (i.customId === "select_tts_voice") {
       const selected = i.values[0];
       await updateGuildConfig(gid, { $set: { "dynamicVC.ttsSpeakerId": selected } });
@@ -1015,7 +1032,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     const limit = slot.limit ?? 0;
     const name = slot.name.replace("{user}", n.member.displayName);
     try {
-      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId || n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
+      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId || n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
       tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id);
       await n.member.voice.setChannel(vc);
       await sendOrUpdateControlPanel(vc);
@@ -1043,7 +1060,30 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     }
     if (o.channelId !== n.channelId && g.features.vcIntroDisplayEnabled) {
       const bio = await Intro.findOne({ guildId: gid, userId: m.id });
-      if (bio?.content) { if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set()); if (!introPosted.get(vc.id).has(m.id)) { introPosted.get(vc.id).add(m.id); const msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null); if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id); } }
+      if (bio?.content) {
+        if (!introPosted.has(vc.id)) introPosted.set(vc.id, new Set());
+        if (!introPosted.get(vc.id).has(m.id)) {
+          introPosted.get(vc.id).add(m.id);
+          let msg = null;
+          try {
+            let webhook = null;
+            const webhooks = await vc.fetchWebhooks();
+            webhook = webhooks.find(wh => wh.owner && wh.owner.id === client.user.id);
+            if (!webhook) webhook = await vc.createWebhook({ name: "VC Intro", avatar: client.user.displayAvatarURL() });
+
+            const embed = new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`);
+
+            if (webhook) {
+              msg = await webhook.send({ embeds: [embed], flags: [MessageFlags.SuppressNotifications] });
+            } else {
+              msg = await vc.send({ embeds: [embed], flags: [MessageFlags.SuppressNotifications] });
+            }
+          } catch (e) {
+            msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null);
+          }
+          if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id);
+        }
+      }
     }
   }
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
