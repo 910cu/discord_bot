@@ -24,6 +24,7 @@ const fs = require("fs");
 const mongoose = require("mongoose");
 const https = require("https");
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require("@discordjs/voice");
+const play = require("play-dl");
 
 // ─── 環境変数と基本設定 ────────────────────────────────────────────────────────
 const token = process.env.DISCORD_TOKEN;
@@ -91,6 +92,7 @@ const tempChannels = new Set(), controlPanelMsgIds = new Map(), vcOwners = new M
 const guildCache = new Map();
 const recruitSelections = new Map();
 const ttsPlayers = new Map();
+const musicPlayers = new Map();
 
 // ─── VOICEVOX スピーカー定義 ───────────────────────────────────────────────────
 const VOICEVOX_SPEAKERS = [
@@ -411,21 +413,29 @@ async function buildPanelPayload(vc) {
   const isTTS = ttsPlayers.has(vc.id);
   const ttsState = ttsPlayers.get(vc.id);
   const speakerLabel = getSpeakerName(ttsState?.activeSpeakerId || g.dynamicVC.ttsSpeakerId || "3");
-  const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setTitle("🎙️ VC Control Interface").setDescription(`**部屋主** : <@${ownerId}>\n\n**現在の設定**\n- 状態: ${locked ? "🔒 ロック中" : "🔓 公開中"}\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 " + speakerLabel : "🔴 停止中"}\``);
+  
+  const isMusic = musicPlayers.has(vc.id);
+  const mState = musicPlayers.get(vc.id);
+  const musicDesc = isMusic && mState.queue[0] ? `🟢 ${mState.queue[0].title.substring(0, 20)}...` : "🔴 停止中";
+
+  const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setTitle("🎙️ VC Control Interface").setDescription(`**部屋主** : <@${ownerId}>\n\n**現在の設定**\n- 状態: ${locked ? "🔒 ロック中" : "🔓 公開中"}\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 " + speakerLabel : "🔴 停止中"}\`\n- 音楽: \`${musicDesc}\``);
+  
   const ttsBtn = createBtn(`vc_tts_toggle_${vc.id}`, isTTS ? "🔇 読上停止" : "🗣️ 読上開始", isTTS ? ButtonStyle.Danger : ButtonStyle.Primary);
+  const musicPlayBtn = createBtn(`vc_music_play_${vc.id}`, "🎵 音楽追加", ButtonStyle.Success);
+  const musicSkipBtn = createBtn(`vc_music_skip_${vc.id}`, "⏭️ スキップ", ButtonStyle.Secondary, !isMusic);
+  const musicStopBtn = createBtn(`vc_music_stop_${vc.id}`, "⏹️ 停止", ButtonStyle.Danger, !isMusic);
+
+  const mediaRow = createRow([ttsBtn, musicPlayBtn, musicSkipBtn, musicStopBtn]);
+  if (g.features.recruitEnabled) mediaRow.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
 
   if (isFixed) {
-    const row = createRow([createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled), ttsBtn]);
-    if (g.features.recruitEnabled) row.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
-    return { embeds: [embed], components: [row] };
+    const row = createRow([createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled)]);
+    return { embeds: [embed], components: [row, mediaRow] };
   }
   const row1 = createRow([createBtn("vc_rename", "✏️ 名前変更"), createBtn("vc_toggle_lock", locked ? "🔓 解除" : "🔒 ロック", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 制限設定", ButtonStyle.Secondary, !g.features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled)]);
   const components = locked ? [row1, createRow([createBtn(`vc_knock_${vc.id}`, "🚪 ノックして参加申請", ButtonStyle.Success)])] : [row1];
-
-  const extRow = new ActionRowBuilder().addComponents(ttsBtn);
-  if (g.features.recruitEnabled) extRow.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
-  components.push(extRow);
-
+  
+  components.push(mediaRow);
   return { embeds: [embed], components };
 }
 
@@ -455,6 +465,8 @@ async function checkAndCleanupVC(vcId) {
     try {
       await vc.delete();
       [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs].forEach(s => s.delete(vcId));
+      const p = ttsPlayers.get(vcId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(vcId);
+      const mp = musicPlayers.get(vcId); if (mp && mp.connection) mp.connection.destroy(); musicPlayers.delete(vcId);
     } catch (e) { }
   }
 }
@@ -615,6 +627,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const targetVcId = cid.replace("vc_tts_toggle_", "");
       const vc = i.member.voice.channel;
       if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      if (musicPlayers.has(vc.id)) return i.reply({ content: "⚠️ 現在音楽再生中のため、読み上げを開始できません。", ephemeral: true });
       if (ttsPlayers.has(vc.id)) {
         const p = ttsPlayers.get(vc.id);
         if (p.connection) p.connection.destroy();
@@ -627,6 +640,35 @@ client.on(Events.InteractionCreate, async (i) => {
         VOICEVOX_SPEAKERS.forEach(s => menu.addOptions({ label: s.label, value: s.value, description: s.value === currentSpeaker ? "現在のデフォルト" : "この声で読み上げを開始します" }));
         return i.reply({ content: "### 🗣️ 読み上げ開始\n使用するVOICEVOXキャラクターを選んでください。", components: [createRow([menu])], ephemeral: true });
       }
+    }
+    
+    if (cid.startsWith("vc_music_play_")) {
+      const targetVcId = cid.replace("vc_music_play_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      if (ttsPlayers.has(vc.id)) return i.reply({ content: "⚠️ 現在読み上げ機能を使用中のため、音楽を再生できません。", ephemeral: true });
+      return i.showModal(new ModalBuilder().setCustomId(`music_modal_${vc.id}`).setTitle("音楽再生").addComponents(createRow([new TextInputBuilder().setCustomId("query").setLabel("YouTubeのURLまたは検索キーワード").setStyle(TextInputStyle.Short).setRequired(true)])));
+    }
+    if (cid.startsWith("vc_music_skip_")) {
+      const targetVcId = cid.replace("vc_music_skip_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      const mState = musicPlayers.get(vc.id);
+      if (!mState) return i.deferUpdate();
+      mState.player.stop();
+      return i.reply({ content: "⏭️ スキップしました。", ephemeral: true });
+    }
+    if (cid.startsWith("vc_music_stop_")) {
+      const targetVcId = cid.replace("vc_music_stop_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      const mState = musicPlayers.get(vc.id);
+      if (mState) {
+        if (mState.connection) mState.connection.destroy();
+        musicPlayers.delete(vc.id);
+        await sendOrUpdateControlPanel(vc);
+      }
+      return i.reply({ content: "⏹️ 音楽を停止し、VCから退出しました。", ephemeral: true });
     }
     if (cid.startsWith("vc_recruit_start_")) {
       const targetVcId = cid.replace("vc_recruit_start_", "");
@@ -778,6 +820,56 @@ client.on(Events.InteractionCreate, async (i) => {
       const name = i.fields.getTextInputValue("name"), limit = parseInt(cid.split("_")[3]);
       await silentReply(i);
       await createDynamicVC(i.guild, i.member, name, limit, g);
+    }
+    if (cid.startsWith("music_modal_")) {
+      const vcId = cid.replace("music_modal_", "");
+      const query = i.fields.getTextInputValue("query");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== vcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      await i.deferReply({ ephemeral: true });
+      try {
+        let title = "Unknown", url = query;
+        if (query.startsWith("http")) {
+          const info = await play.video_info(query).catch(()=>null);
+          if (info) title = info.video_details.title;
+        } else {
+          const search = await play.search(query, { limit: 1 }).catch(()=>null);
+          if (!search || search.length === 0) return i.editReply("❌ 検索結果が見つかりませんでした。");
+          title = search[0].title;
+          url = search[0].url;
+        }
+        
+        let mState = musicPlayers.get(vc.id);
+        if (!mState) {
+          const player = createAudioPlayer();
+          player.on(AudioPlayerStatus.Idle, () => {
+            const st = musicPlayers.get(vc.id);
+            if (st) {
+              st.queue.shift();
+              playMusicQueue(vc.id, i.guildId, vc.guild.voiceAdapterCreator);
+            }
+          });
+          player.on('error', e => {
+            console.error("Music Player Error:", e);
+            const st = musicPlayers.get(vc.id);
+            if (st) { st.queue.shift(); playMusicQueue(vc.id, i.guildId, vc.guild.voiceAdapterCreator); }
+          });
+          mState = { player, queue: [], isPlaying: false, connection: null };
+          musicPlayers.set(vc.id, mState);
+        }
+        
+        mState.queue.push({ url, title });
+        
+        if (!mState.isPlaying) {
+          playMusicQueue(vc.id, i.guildId, vc.guild.voiceAdapterCreator);
+        } else {
+          await sendOrUpdateControlPanel(vc);
+        }
+        return i.editReply({ content: `✅ **${title}** をキューに追加しました。` });
+      } catch (err) {
+        console.error(err);
+        return i.editReply("❌ 曲の取得に失敗しました。");
+      }
     }
     if (cid.startsWith("rmodal_")) {
       const parts = cid.replace("rmodal_", "").split("_");
@@ -1089,7 +1181,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
     const realMembers = ch?.members.filter(m => !m.user.bot);
-    if (realMembers?.size === 0) { try { await ch.delete();[tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); } catch { } }
+    if (realMembers?.size === 0) { try { await ch.delete();[tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); const mp = musicPlayers.get(o.channelId); if (mp && mp.connection) mp.connection.destroy(); musicPlayers.delete(o.channelId); } catch { } }
     else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = realMembers.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch); } }
   }
 });
@@ -1247,5 +1339,34 @@ client.once(Events.ClientReady, async () => {
     }, 30000); // 30秒ごとにチェック
   }
 });
+
+// ─── Music Bot Helper ───────────────────────────────────────────────────────
+async function playMusicQueue(vcId, guildId, adapterCreator) {
+  const state = musicPlayers.get(vcId);
+  if (!state || state.queue.length === 0) {
+    if (state && state.connection) state.connection.destroy();
+    musicPlayers.delete(vcId);
+    const vc = client.channels.cache.get(vcId);
+    if (vc) await sendOrUpdateControlPanel(vc);
+    return;
+  }
+  try {
+    const song = state.queue[0];
+    const stream = await play.stream(song.url);
+    const resource = createAudioResource(stream.stream, { inputType: stream.type });
+    if (!state.connection) {
+      state.connection = joinVoiceChannel({ channelId: vcId, guildId: guildId, adapterCreator: adapterCreator });
+      state.connection.subscribe(state.player);
+    }
+    state.isPlaying = true;
+    state.player.play(resource);
+    const vc = client.channels.cache.get(vcId);
+    if (vc) await sendOrUpdateControlPanel(vc);
+  } catch (e) {
+    console.error("Music Play Error:", e);
+    state.queue.shift();
+    playMusicQueue(vcId, guildId, adapterCreator);
+  }
+}
 
 client.login(token);
