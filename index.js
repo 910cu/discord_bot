@@ -33,6 +33,7 @@ if (!mongoUri) { console.warn("⚠️ MONGO_URI が設定されていません�
 
 const { clientId, guildId } = require("./config.json");
 const allCommands = require("./commands");
+const { handlePlayModal, skipFromButton, stopFromButton, queueFromButton } = require("./musicCommands");
 
 // ─── MongoDB スキーマ定義 ──────────────────────────────────────────────────────
 const guildSchema = new mongoose.Schema({
@@ -414,10 +415,17 @@ async function buildPanelPayload(vc) {
   const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setTitle("🎙️ VC Control Interface").setDescription(`**部屋主** : <@${ownerId}>\n\n**現在の設定**\n- 状態: ${locked ? "🔒 ロック中" : "🔓 公開中"}\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 " + speakerLabel : "🔴 停止中"}\``);
   const ttsBtn = createBtn(`vc_tts_toggle_${vc.id}`, isTTS ? "🔇 読上停止" : "🗣️ 読上開始", isTTS ? ButtonStyle.Danger : ButtonStyle.Primary);
 
+  const musicRow = createRow([
+    createBtn(`vc_music_play_${vc.id}`, "▶️ 再生", ButtonStyle.Success),
+    createBtn(`vc_music_skip_${vc.id}`, "⏭️ スキップ", ButtonStyle.Secondary),
+    createBtn(`vc_music_stop_${vc.id}`, "⏹️ 停止", ButtonStyle.Danger),
+    createBtn(`vc_music_queue_${vc.id}`, "📋 キュー", ButtonStyle.Secondary)
+  ]);
+
   if (isFixed) {
     const row = createRow([createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled), ttsBtn]);
     if (g.features.recruitEnabled) row.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
-    return { embeds: [embed], components: [row] };
+    return { embeds: [embed], components: [row, musicRow] };
   }
   const row1 = createRow([createBtn("vc_rename", "✏️ 名前変更"), createBtn("vc_toggle_lock", locked ? "🔓 解除" : "🔒 ロック", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 制限設定", ButtonStyle.Secondary, !g.features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled)]);
   const components = locked ? [row1, createRow([createBtn(`vc_knock_${vc.id}`, "🚪 ノックして参加申請", ButtonStyle.Success)])] : [row1];
@@ -425,6 +433,7 @@ async function buildPanelPayload(vc) {
   const extRow = new ActionRowBuilder().addComponents(ttsBtn);
   if (g.features.recruitEnabled) extRow.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
   components.push(extRow);
+  components.push(musicRow);
 
   return { embeds: [embed], components };
 }
@@ -628,6 +637,30 @@ client.on(Events.InteractionCreate, async (i) => {
         return i.reply({ content: "### 🗣️ 読み上げ開始\n使用するVOICEVOXキャラクターを選んでください。", components: [createRow([menu])], ephemeral: true });
       }
     }
+    if (cid.startsWith("vc_music_play_")) {
+      const targetVcId = cid.replace("vc_music_play_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      return i.showModal(new ModalBuilder().setCustomId(`vc_music_play_modal_${vc.id}`).setTitle("🎶 音楽を再生").addComponents(createRow([new TextInputBuilder().setCustomId("query").setLabel("検索キーワード または URL").setStyle(TextInputStyle.Short).setRequired(true)])));
+    }
+    if (cid.startsWith("vc_music_skip_")) {
+      const targetVcId = cid.replace("vc_music_skip_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      return skipFromButton(i);
+    }
+    if (cid.startsWith("vc_music_stop_")) {
+      const targetVcId = cid.replace("vc_music_stop_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      return stopFromButton(i);
+    }
+    if (cid.startsWith("vc_music_queue_")) {
+      const targetVcId = cid.replace("vc_music_queue_", "");
+      const vc = i.member.voice.channel;
+      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
+      return queueFromButton(i);
+    }
     if (cid.startsWith("vc_recruit_start_")) {
       const targetVcId = cid.replace("vc_recruit_start_", "");
       const vc = i.member.voice.channel;
@@ -778,6 +811,9 @@ client.on(Events.InteractionCreate, async (i) => {
       const name = i.fields.getTextInputValue("name"), limit = parseInt(cid.split("_")[3]);
       await silentReply(i);
       await createDynamicVC(i.guild, i.member, name, limit, g);
+    }
+    if (cid.startsWith("vc_music_play_modal_")) {
+      return handlePlayModal(i);
     }
     if (cid.startsWith("rmodal_")) {
       const parts = cid.replace("rmodal_", "").split("_");

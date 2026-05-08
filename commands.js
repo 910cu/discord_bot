@@ -399,6 +399,8 @@ const setupCommand = {
   },
 };
 
+const musicCommands = require('./musicCommands');
+
 module.exports = [
   moveCommand,
   cmoveCommand,
@@ -409,4 +411,5 @@ module.exports = [
   ymoveCommand,
   zmoveCommand,
   setupCommand,
+  ...musicCommands
 ];
