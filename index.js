@@ -1066,7 +1066,10 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
             webhook = webhooks.find(wh => wh.owner && wh.owner.id === client.user.id);
             if (!webhook) webhook = await vc.createWebhook({ name: "VC Intro", avatar: client.user.displayAvatarURL() });
 
-            const embed = new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`);
+            const cleanName = m.displayName.replace(/<a?:.+?:\d+>|\p{Extended_Pictographic}/gu, "").replace(/[\u200B-\u200D\uFE0F]/g, "").trim() || m.displayName;
+            const cleanContent = bio.content.replace(/<a?:.+?:\d+>|\p{Extended_Pictographic}/gu, "").replace(/[\u200B-\u200D\uFE0F]/g, "").trim();
+
+            const embed = new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${cleanName}\n\n${cleanContent}`);
 
             if (webhook) {
               msg = await webhook.send({ embeds: [embed], flags: [MessageFlags.SuppressNotifications] });
@@ -1074,7 +1077,9 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
               msg = await vc.send({ embeds: [embed], flags: [MessageFlags.SuppressNotifications] });
             }
           } catch (e) {
-            msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${m.displayName}\n\n${bio.content}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null);
+            const cleanName = m.displayName.replace(/<a?:.+?:\d+>|\p{Extended_Pictographic}/gu, "").replace(/[\u200B-\u200D\uFE0F]/g, "").trim() || m.displayName;
+            const cleanContent = bio.content.replace(/<a?:.+?:\d+>|\p{Extended_Pictographic}/gu, "").replace(/[\u200B-\u200D\uFE0F]/g, "").trim();
+            msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${cleanName}\n\n${cleanContent}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null);
           }
           if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id);
         }
