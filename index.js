@@ -240,7 +240,6 @@ async function getSettingsPayload(gid, type = "main", config = null) {
   const on = "●", off = "○";
   let embed = new EmbedBuilder().setColor(0x2b2d31);
   let components = [];
-  const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
 
   if (type === "main") {
     embed.setTitle(null).setDescription(`# ${guildName}\n-# v1.2.0 (Multi-Guild Mode)\n\n### ⚙️ 設定カテゴリを選択してください\n各カテゴリーから、機能の有効化やチャンネル・ロールの詳細設定が行えます。`);
@@ -249,12 +248,13 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("config_messages", "💬 メッセージ編集", ButtonStyle.Secondary)])
     ];
   } else if (type === "msg_relay") {
+    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
     const isEnabled = features.msgRelayEnabled;
     let subDesc = "### 📨 メッセージ転送設定\n指定チャンネルの投稿を別チャンネルへ自動転送します。\n省略文字列を設定すると、その文字列以降は送信されません。\n\n";
     subDesc += `**状態**: [ ${fStatus("msgRelayEnabled")} ]\n`;
     subDesc += `**📥 転送元**: ${dynamicVC.msgRelaySourceChannelId ? `<#${dynamicVC.msgRelaySourceChannelId}>` : "`未設定` 🟥"}\n`;
-    const reportUsers = dynamicVC.msgRelayReportUserIds || (dynamicVC.msgRelayReportUserId ? [dynamicVC.msgRelayReportUserId] : []);
-    subDesc += `**⚠️ 報告通知先**: ${reportUsers.length > 0 ? reportUsers.map(u => `<@${u}>`).join(", ") : "`未設定` (未設定時はオーナーにDM)"}\n`;
+    subDesc += `**📤 転送先**: ${dynamicVC.msgRelayDestChannelId ? `<#${dynamicVC.msgRelayDestChannelId}>` : "`未設定` 🟥"}\n`;
+    subDesc += `**⚠️ 報告通知先**: ${dynamicVC.msgRelayReportUserId ? `<@${dynamicVC.msgRelayReportUserId}>` : "`未設定` (未設定時はオーナーにDM)"}\n`;
     subDesc += `**✂️ 省略文字列**: ${dynamicVC.msgRelayCutoff ? `\`${dynamicVC.msgRelayCutoff}\`` : "`未設定` (全文転送)"}\n\n`;
     subDesc += `-# 省略文字列が含まれる行から下は転送されません。投稿者のアイコン・名前付きで転送されます。`;
     embed.setTitle(null).setDescription(subDesc);
@@ -262,10 +262,11 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("toggle_msg_relay", `転送: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_msg_relay_cutoff", "✂️ 省略文字列", ButtonStyle.Secondary, !isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_src").setPlaceholder(isEnabled ? "📥 転送元チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_dst").setPlaceholder(isEnabled ? "📤 転送先チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
-      createRow([new UserSelectMenuBuilder().setCustomId("select_cfg_relay_rpt").setPlaceholder(isEnabled ? "⚠️ 報告通知先ユーザーを選択 (複数可)" : "⛔ 無効なため設定不可").setMaxValues(isEnabled ? 25 : 1).setDisabled(!isEnabled)]),
+      createRow([new UserSelectMenuBuilder().setCustomId("select_cfg_relay_rpt").setPlaceholder(isEnabled ? "⚠️ 報告通知先ユーザーを選択 (任意)" : "⛔ 無効なため設定不可").setDisabled(!isEnabled)]),
       createRow([createBtn("cfg_btn_ch_features", "⬅️ 戻る")])
     ];
   } else if (type === "member_count") {
+    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
     const fmt = dynamicVC.memberCountFormat || "♂ {male}人・♀ {female}人・👤 {total}人";
     const previewName = fmt.replace("{male}", "39").replace("{female}", "52").replace("{total}", "91");
     let subDesc = "### 👥 人数カウンター設定\n1つのボイスチャンネルに男性・女性・合計人数を横並びで表示します。\n\n";
@@ -297,6 +298,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     ];
   } else if (type === "vc_features") {
     const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
+    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
     let subDesc = "### 🎙️ VC内機能設定\n各機能の詳細設定や有効化・無効化が行えます。\n\n";
     subDesc += `**💤 AFK (寝落ち)** [ ${fStatus("afkEnabled")} ]\n┕ 移動先: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**🖼️ 自己紹介表示** [ ${fStatus("vcIntroDisplayEnabled")} ]\n┕ ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥"}\n\n`;
@@ -1013,18 +1015,19 @@ client.on(Events.InteractionCreate, async (i) => {
         )
         .setTimestamp();
 
-      await silentReply(i);
+      await i.reply({ content: "✅ 報告を送信しました。ご協力ありがとうございます。", ephemeral: true });
 
-      const reportUserIds = g2.dynamicVC?.msgRelayReportUserIds || (g2.dynamicVC?.msgRelayReportUserId ? [g2.dynamicVC.msgRelayReportUserId] : []);
-      if (reportUserIds.length > 0) {
-        for (const uid of reportUserIds) {
-          const u = await client.users.fetch(uid).catch(() => null);
-          if (u) await u.send({ embeds: [reportEmbed] }).catch(() => {});
-        }
-      } else {
-        const owner = await i.guild.fetchOwner().catch(() => null);
-        if (owner) await owner.send({ embeds: [reportEmbed] }).catch(() => {});
+      const reportUserId = g2.dynamicVC?.msgRelayReportUserId;
+      let targetUser = null;
+      if (reportUserId) {
+        targetUser = await client.users.fetch(reportUserId).catch(() => null);
       }
+      if (!targetUser) {
+        // 未設定の場合はサーバーオーナーにDM
+        const owner = await i.guild.fetchOwner().catch(() => null);
+        targetUser = owner?.user || null;
+      }
+      if (targetUser) await targetUser.send({ embeds: [reportEmbed] }).catch(console.error);
       return;
     }
     if (cid === "msg_relay_cutoff_modal") {
@@ -1150,7 +1153,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const val = i.values[0];
       if (field === "src") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelaySourceChannelId": val } });
       else if (field === "dst") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayDestChannelId": val } });
-      else if (field === "rpt") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayReportUserIds": i.values } });
+      else if (field === "rpt") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayReportUserId": val } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "msg_relay", updatedG));
       return;
@@ -1159,15 +1162,21 @@ client.on(Events.InteractionCreate, async (i) => {
       const field = i.customId.replace("select_cfg_mc_", "");
       const val = i.values[0];
       if (field === "main") {
-        // 元のチャンネル名を保存
-        const ch = i.guild.channels.cache.get(val);
-        const origName = ch ? ch.name : null;
-        const updateSet = { "dynamicVC.memberCountChannelId": val };
-        if (origName) updateSet["dynamicVC.memberCountOriginalName"] = origName;
-        await updateGuildConfig(gid, { $set: updateSet });
-        const updatedG = await getGuildConfig(gid, true);
-        await i.update(await getSettingsPayload(gid, "member_count", updatedG));
-        await updateMemberCountChannels(i.guild);
+        try {
+          const ch = await i.guild.channels.fetch(val);
+          const origName = ch ? ch.name : "カウンター";
+          const updateSet = { "dynamicVC.memberCountChannelId": val, "dynamicVC.memberCountOriginalName": origName };
+          await updateGuildConfig(gid, { $set: updateSet });
+          
+          const updatedG = await getGuildConfig(gid, true);
+          await i.update(await getSettingsPayload(gid, "member_count", updatedG));
+          
+          // 設定直後に即時反映を試みる
+          await updateMemberCountChannels(i.guild);
+        } catch (e) {
+          console.error(`[MemberCount] 設定エラー: ${e.message}`);
+          await i.reply({ content: "❌ チャンネルの取得に失敗しました。権限などを確認してください。", ephemeral: true });
+        }
       }
       return;
     }
@@ -1391,7 +1400,7 @@ const memberCountUpdateTimers = new Map();
 
 async function updateMemberCountChannels(guild) {
   const gid = guild.id;
-  const g = await getGuildConfig(gid);
+  const g = await getGuildConfig(gid, true); // 最新設定を強制取得
   if (!g.features.memberCountEnabled) return;
 
   const roles = g.roles || {};
@@ -1419,12 +1428,17 @@ async function updateMemberCountChannels(guild) {
   const name = fmt.replace("{male}", maleCount).replace("{female}", femaleCount).replace("{total}", totalCount);
   try {
     const ch = await guild.channels.fetch(chId).catch(() => null);
-    if (!ch) return;
-    if (ch.name !== name) await ch.setName(name);
-    // 一番上に移動 (ロックなし)
+    if (!ch) {
+      console.warn(`[MemberCount] ${guild.name}: 指定されたチャンネルが見つかりません (${chId})`);
+      return;
+    }
+    if (ch.name !== name) {
+      await ch.setName(name);
+      console.log(`[MemberCount] ${guild.name}: チャンネル名を更新しました -> ${name}`);
+    }
     await ch.setPosition(0).catch(() => { });
   } catch (e) {
-    console.error(`[MemberCount] チャンネル更新エラー (${chId}): ${e.message}`);
+    console.error(`[MemberCount] ${guild.name}: チャンネル更新エラー (${chId}) - ${e.message}`);
   }
   console.log(`[MemberCount] ${guild.name}: ♂${maleCount} ♀${femaleCount} 👤${totalCount}`);
 }
