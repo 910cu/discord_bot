@@ -816,12 +816,12 @@ client.on(Events.InteractionCreate, async (i) => {
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, nextType, updatedG));
       if (key === "memberCountEnabled") {
-        if (!newFeatures.memberCountEnabled) {
-          // 無効化: チャンネル名を元に戻す
-          await clearMemberCountChannels(i.guild);
+        if (!g.features.memberCountEnabled) {
+          // 有効化: 即時カウンター更新（ロック＋移動含む）
+          await updateMemberCountChannels(i.guild);
         } else {
-          // 有効化: カウンター更新
-          scheduleMemberCountUpdate(i.guild);
+          // 無効化: チャンネル名を元に戻す＋ロック解除
+          await clearMemberCountChannels(i.guild);
         }
       }
     }
@@ -1042,7 +1042,7 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateGuildConfig(gid, { $set: { "dynamicVC.memberCountFormat": fmt } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "member_count", updatedG));
-      scheduleMemberCountUpdate(i.guild);
+      await updateMemberCountChannels(i.guild);
       return;
     }
     if (cid.startsWith("msg_submit_")) {
@@ -1162,24 +1162,15 @@ client.on(Events.InteractionCreate, async (i) => {
       const field = i.customId.replace("select_cfg_mc_", "");
       const val = i.values[0];
       if (field === "main") {
-        try {
-          // チャンネルフェッチ前に即時応答
-          await i.deferUpdate();
-          
-          const ch = await i.guild.channels.fetch(val).catch(() => null);
-          const origName = ch ? ch.name : "カウンター";
-          const updateSet = { "dynamicVC.memberCountChannelId": val, "dynamicVC.memberCountOriginalName": origName };
-          await updateGuildConfig(gid, { $set: updateSet });
-          
-          const updatedG = await getGuildConfig(gid, true);
-          await i.editReply(await getSettingsPayload(gid, "member_count", updatedG));
-          
-          scheduleMemberCountUpdate(i.guild);
-        } catch (e) {
-          console.error(`[MemberCount] 設定エラー: ${e.message}`);
-          // すでに deferUpdate しているので editReply でエラー表示
-          await i.editReply({ content: "❌ 設定中にエラーが発生しました。権限などを確認してください。", components: [] }).catch(() => {});
-        }
+        // 元のチャンネル名を保存
+        const ch = i.guild.channels.cache.get(val);
+        const origName = ch ? ch.name : null;
+        const updateSet = { "dynamicVC.memberCountChannelId": val };
+        if (origName) updateSet["dynamicVC.memberCountOriginalName"] = origName;
+        await updateGuildConfig(gid, { $set: updateSet });
+        const updatedG = await getGuildConfig(gid, true);
+        await i.update(await getSettingsPayload(gid, "member_count", updatedG));
+        await updateMemberCountChannels(i.guild);
       }
       return;
     }
@@ -1403,7 +1394,7 @@ const memberCountUpdateTimers = new Map();
 
 async function updateMemberCountChannels(guild) {
   const gid = guild.id;
-  const g = await getGuildConfig(gid, true); // 最新設定を強制取得
+  const g = await getGuildConfig(gid);
   if (!g.features.memberCountEnabled) return;
 
   const roles = g.roles || {};
@@ -1431,17 +1422,12 @@ async function updateMemberCountChannels(guild) {
   const name = fmt.replace("{male}", maleCount).replace("{female}", femaleCount).replace("{total}", totalCount);
   try {
     const ch = await guild.channels.fetch(chId).catch(() => null);
-    if (!ch) {
-      console.warn(`[MemberCount] ${guild.name}: 指定されたチャンネルが見つかりません (${chId})`);
-      return;
-    }
-    if (ch.name !== name) {
-      await ch.setName(name);
-      console.log(`[MemberCount] ${guild.name}: チャンネル名を更新しました -> ${name}`);
-    }
+    if (!ch) return;
+    if (ch.name !== name) await ch.setName(name);
+    // 一番上に移動 (ロックなし)
     await ch.setPosition(0).catch(() => { });
   } catch (e) {
-    console.error(`[MemberCount] ${guild.name}: チャンネル更新エラー (${chId}) - ${e.message}`);
+    console.error(`[MemberCount] チャンネル更新エラー (${chId}): ${e.message}`);
   }
   console.log(`[MemberCount] ${guild.name}: ♂${maleCount} ♀${femaleCount} 👤${totalCount}`);
 }
