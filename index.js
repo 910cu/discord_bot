@@ -281,7 +281,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
         back: "ch_features"
       },
       intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), extraBtn3: createBtn("cfg_intro_list", "📋 承認済みリスト", ButtonStyle.Secondary), selects: [{ id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, { id: "select_cfg_intro_add", ph: "👤 手動で承認ユーザーを追加", user: true, multi: true }], back: "ch_features" },
-      intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelIds?.length > 0 ? dynamicVC.introSourceChannelIds.map(id => `<#${id}>`).join(", ") : (dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥")}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択 (複数可)", type: [ChannelType.GuildText], multi: true }, back: "vc_features" },
+      intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelIds?.length > 0 ? dynamicVC.introSourceChannelIds.map(id => `<#${id}>`).join(", ") : (dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥")}\n- 📨 自己紹介転送先: ${dynamicVC.introForwardChannelId ? `<#${dynamicVC.introForwardChannelId}>` : "`未設定`"}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。\nまた、自己紹介チャンネルに書き込まれた内容を転送先チャンネルへ自動転送します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), selects: [{ id: "select_cfg_introsource", ph: "📋 ソースを選択 (複数可)", type: [ChannelType.GuildText], multi: true }, { id: "select_cfg_introfwd", ph: "📨 自己紹介転送先チャンネルを選択", type: [ChannelType.GuildText] }], back: "vc_features" },
       vc: {
         title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n\nVCオーナーが部屋のロックや性別制限を行えるようにします。`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限",
         extraBtn: createBtn("config_roles_id", "🆔 IDで設定", ButtonStyle.Primary),
@@ -1002,8 +1002,8 @@ client.on(Events.InteractionCreate, async (i) => {
         for (const uid of vals) await Intro.findOneAndUpdate({ guildId: gid, userId: uid }, { $set: { introduced: true } }, { upsert: true });
         return i.reply({ content: `✅ ${vals.length} 名を承認済みリストに手動追加しました。`, ephemeral: true });
       }
-      const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", category: "cleanupCategoryId", introcheck: "introCheckChannelId", introsource: "introSourceChannelIds", male: "male", female: "female", recruit: "recruitmentChannelId", recruit_role: "recruitmentRoleIds" };
-      const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", category: "panel", introcheck: "intro_kick", introsource: "intro_display", male: "vc", female: "vc", recruit: "recruit", recruit_role: "recruit" };
+      const map = { trigger: "triggerChannelId", trigger4: "triggerChannelId4", trigger5: "triggerChannelId5", afk: "afkChannelId", panel: "createPanelChannelId", category: "cleanupCategoryId", introcheck: "introCheckChannelId", introsource: "introSourceChannelIds", introfwd: "introForwardChannelId", male: "male", female: "female", recruit: "recruitmentChannelId", recruit_role: "recruitmentRoleIds" };
+      const typeMap = { trigger: "trigger", trigger4: "trigger", trigger5: "trigger", afk: "afk", panel: "panel", category: "panel", introcheck: "intro_kick", introsource: "intro_display", introfwd: "intro_display", male: "vc", female: "vc", recruit: "recruit", recruit_role: "recruit" };
       const type = typeMap[field] || "vc";
       if (field === "male" || field === "female") await updateGuildConfig(gid, { $set: { [`roles.${field}`]: vals[0] } });
       else if (map[field]) await updateGuildConfig(gid, { $set: { [`dynamicVC.${map[field]}`]: (field === "introsource" || field === "recruit_role") ? vals : vals[0] } });
@@ -1129,6 +1129,42 @@ async function syncIntroHistory(gid) {
   console.log(`🔄 Guild ${gid}: チャンネル履歴およびロールからの同期が完了しました。`);
 }
 
+// 自己紹介を転送先チャンネルへ送信するヘルパー
+async function forwardIntroToChannel(g, member, content) {
+  const fwdChId = g.dynamicVC?.introForwardChannelId;
+  if (!fwdChId) return;
+  const fwdCh = member.guild.channels.cache.get(fwdChId);
+  if (!fwdCh || !fwdCh.isTextBased()) return;
+
+  // 【一言】の手前までを切り取る
+  const cutIndex = content.indexOf("【一言】");
+  const displayContent = cutIndex !== -1 ? content.slice(0, cutIndex).trim() : content.trim();
+  if (!displayContent) return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setAuthor({ name: member.displayName, iconURL: member.displayAvatarURL({ dynamic: true }) })
+    .setThumbnail(member.displayAvatarURL({ dynamic: true, size: 256 }))
+    .setDescription(displayContent)
+    .setTimestamp();
+
+  try {
+    // Webhookで投稿者の名前・アイコンで送信
+    const webhooks = await fwdCh.fetchWebhooks();
+    let webhook = webhooks.find(wh => wh.owner && wh.owner.id === client.user.id);
+    if (!webhook) webhook = await fwdCh.createWebhook({ name: "Intro Forward", avatar: client.user.displayAvatarURL() });
+    await webhook.send({
+      embeds: [embed],
+      username: member.displayName,
+      avatarURL: member.displayAvatarURL({ dynamic: true }),
+      flags: [MessageFlags.SuppressNotifications]
+    });
+  } catch (e) {
+    // Webhookが使えなければ通常送信
+    await fwdCh.send({ embeds: [embed], flags: [MessageFlags.SuppressNotifications] }).catch(() => {});
+  }
+}
+
 const handleIntroUpdate = async (msg, type = "create") => {
   if (msg.author?.bot) return;
   const gid = msg.guildId; if (!gid) return;
@@ -1148,6 +1184,13 @@ const handleIntroUpdate = async (msg, type = "create") => {
     if (type === "create" && msg.channelId === checkCh) {
       if (bio.warnMsgId) { try { await (await msg.guild.channels.cache.get(checkCh).messages.fetch(bio.warnMsgId)).delete(); } catch { } await Intro.updateOne({ _id: bio._id }, { $set: { warnMsgId: null } }); }
       msg.reply({ content: (g.messages.introNotify || "✅ 確認").replace(/{user}/g, uid).replace(/\\n/g, '\n') }).then(r => setTimeout(() => r.delete().catch(() => { }), 10000));
+    }
+    // ソースチャンネルへの新規投稿・編集時に転送
+    if (isSource && (type === "create" || type === "update") && g.features.vcIntroDisplayEnabled) {
+      const member = await msg.guild.members.fetch(uid).catch(() => null);
+      if (member && introData.content) {
+        await forwardIntroToChannel(g, member, introData.content);
+      }
     }
   }
 };
