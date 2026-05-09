@@ -245,7 +245,6 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     embed.setTitle(null).setDescription(`# ${guildName}\n-# v1.2.0 (Multi-Guild Mode)\n\n### ⚙️ 設定カテゴリを選択してください\n各カテゴリーから、機能の有効化やチャンネル・ロールの詳細設定が行えます。`);
     components = [
       createRow([createBtn("cfg_btn_ch_features", "📺 チャンネル機能", ButtonStyle.Primary), createBtn("cfg_btn_vc_features", "🎙️ VC内機能", ButtonStyle.Primary)]),
-      createRow([createBtn("cfg_btn_member_count", "👥 人数カウンター", ButtonStyle.Primary), createBtn("cfg_btn_msg_relay", "📨 メッセージ転送", ButtonStyle.Primary)]),
       createRow([createBtn("config_messages", "💬 メッセージ編集", ButtonStyle.Secondary)])
     ];
   } else if (type === "msg_relay") {
@@ -254,8 +253,8 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     let subDesc = "### 📨 メッセージ転送設定\n指定チャンネルの投稿を別チャンネルへ自動転送します。\n省略文字列を設定すると、その文字列以降は送信されません。\n\n";
     subDesc += `**状態**: [ ${fStatus("msgRelayEnabled")} ]\n`;
     subDesc += `**📥 転送元**: ${dynamicVC.msgRelaySourceChannelId ? `<#${dynamicVC.msgRelaySourceChannelId}>` : "`未設定` 🟥"}\n`;
-    subDesc += `**📤 転送先**: ${dynamicVC.msgRelayDestChannelId ? `<#${dynamicVC.msgRelayDestChannelId}>` : "`未設定` 🟥"}\n`;
-    subDesc += `**⚠️ 報告通知先**: ${dynamicVC.msgRelayReportUserId ? `<@${dynamicVC.msgRelayReportUserId}>` : "`未設定` (未設定時はオーナーにDM)"}\n`;
+    const reportUsers = dynamicVC.msgRelayReportUserIds || (dynamicVC.msgRelayReportUserId ? [dynamicVC.msgRelayReportUserId] : []);
+    subDesc += `**⚠️ 報告通知先**: ${reportUsers.length > 0 ? reportUsers.map(u => `<@${u}>`).join(", ") : "`未設定` (未設定時はオーナーにDM)"}\n`;
     subDesc += `**✂️ 省略文字列**: ${dynamicVC.msgRelayCutoff ? `\`${dynamicVC.msgRelayCutoff}\`` : "`未設定` (全文転送)"}\n\n`;
     subDesc += `-# 省略文字列が含まれる行から下は転送されません。投稿者のアイコン・名前付きで転送されます。`;
     embed.setTitle(null).setDescription(subDesc);
@@ -263,8 +262,8 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("toggle_msg_relay", `転送: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_msg_relay_cutoff", "✂️ 省略文字列", ButtonStyle.Secondary, !isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_src").setPlaceholder(isEnabled ? "📥 転送元チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_dst").setPlaceholder(isEnabled ? "📤 転送先チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
-      createRow([new UserSelectMenuBuilder().setCustomId("select_cfg_relay_rpt").setPlaceholder(isEnabled ? "⚠️ 報告通知先ユーザーを選択 (任意)" : "⛔ 無効なため設定不可").setDisabled(!isEnabled)]),
-      createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
+      createRow([new UserSelectMenuBuilder().setCustomId("select_cfg_relay_rpt").setPlaceholder(isEnabled ? "⚠️ 報告通知先ユーザーを選択 (複数可)" : "⛔ 無効なため設定不可").setMaxValues(isEnabled ? 25 : 1).setDisabled(!isEnabled)]),
+      createRow([createBtn("cfg_btn_ch_features", "⬅️ 戻る")])
     ];
   } else if (type === "member_count") {
     const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
@@ -281,19 +280,21 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     components = [
       createRow([createBtn("toggle_member_count", `カウンター: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_member_count_update", "🔄 今すぐ更新", ButtonStyle.Secondary, !isEnabled), createBtn("cfg_member_count_format", "📝 表示形式編集", ButtonStyle.Secondary, !isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_mc_main").setPlaceholder(isEnabled ? "📍 カウンター表示チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!isEnabled)]),
-      createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
+      createRow([createBtn("cfg_btn_ch_features", "⬅️ 戻る")])
     ];
   } else if (type === "ch_features") {
-    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
     let subDesc = "### 📺 チャンネル機能設定\nボットの根幹となるチャンネル関連の機能設定です。\n\n";
     subDesc += `**🎫 VC作成チャンネル** [ ${fStatus("vcPanelEnabled")} ]\n┕ 設置先: ${dynamicVC.createPanelChannelId ? `<#${dynamicVC.createPanelChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**➕ ＶＣチャンネル自動作成** [ ${fStatus("vcCreationEnabled")} ]\n┕ 自由枠: ${dynamicVC.triggerChannelId ? `<#${dynamicVC.triggerChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**🛂 入国審査 (自動整理)** [ ${fStatus("introKickEnabled")} ]\n┕ 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定` 🟥"}\n\n`;
-    subDesc += `**⏱️ 空室削除タイマー**: ${dynamicVC.autoDeleteMinutes || 5}分\n`;
+    subDesc += `**⏱️ 空室削除タイマー**: ${dynamicVC.autoDeleteMinutes || 5}分\n\n`;
+    subDesc += `**👥 人数カウンター**: [ ${fStatus("memberCountEnabled")} ]\n`;
+    subDesc += `**📨 メッセージ転送**: [ ${fStatus("msgRelayEnabled")} ]\n`;
     embed.setTitle(null).setDescription(subDesc);
     components = [
       createRow([createBtn("cfg_btn_panel", "🎫 作成パネル", ButtonStyle.Secondary), createBtn("cfg_btn_trigger", "➕ 自動作成", ButtonStyle.Secondary), createBtn("cfg_btn_intro_kick", "🛂 入国審査", ButtonStyle.Secondary)]),
-      createRow([createBtn("cfg_btn_auto_delete", "⏱️ 削除設定", ButtonStyle.Secondary), createBtn("cfg_back_main", "⬅️ 戻る")])
+      createRow([createBtn("cfg_btn_member_count", "👥 人数カウンター", ButtonStyle.Secondary), createBtn("cfg_btn_msg_relay", "📨 メッセージ転送", ButtonStyle.Secondary), createBtn("cfg_btn_auto_delete", "⏱️ 削除設定", ButtonStyle.Secondary)]),
+      createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else if (type === "vc_features") {
     const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
@@ -854,11 +855,11 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     if (cid.startsWith("vc_knock_")) {
       const vcId = cid.replace("vc_knock_", ""), vc = i.guild.channels.cache.get(vcId); if (!vc || i.member.voice.channelId === vcId || vcOwners.get(vcId) === i.user.id || !lockedVCs.has(vcId)) return i.deferUpdate();
-      if (!pendingRequests.has(vcId)) pendingRequests.set(vcId, new Map()); pendingRequests.get(vcId).set(i.user.id, true); await updateKnockNotifyMessage(vc); return i.reply({ content: "✅ 申請しました", ephemeral: true });
+      if (!pendingRequests.has(vcId)) pendingRequests.set(vcId, new Map()); pendingRequests.get(vcId).set(i.user.id, true); await updateKnockNotifyMessage(vc); return i.deferUpdate();
     }
     if (cid.startsWith("knock_approve_") || cid.startsWith("knock_deny_")) {
       const [, , vcId, uid] = cid.split("_"), vc = i.guild.channels.cache.get(vcId); if (!vc || vcOwners.get(vcId) !== i.user.id) return i.deferUpdate();
-      await (i.channel.type === ChannelType.DM ? i.update({ content: `✅ ${cid.includes("approve") ? "歓迎" : "お断り"}しました。`, components: [] }) : i.deferUpdate());
+      await i.deferUpdate();
       pendingRequests.get(vcId)?.delete(uid);
       if (cid.includes("approve")) { if (!allowedUsers.has(vcId)) allowedUsers.set(vcId, new Set()); allowedUsers.get(vcId).add(uid); const m = await i.guild.members.fetch(uid).catch(() => null); if (m?.voice.channel) m.voice.setChannel(vc).catch(() => vc.send(`✨ <@${uid}> さん、どうぞお入りください！`)); else vc.send(`✨ <@${uid}> さん、どうぞお入りください！`).then(msg => setTimeout(() => msg.delete().catch(() => { }), 60000)); }
       return updateKnockNotifyMessage(vc);
@@ -1014,19 +1015,18 @@ client.on(Events.InteractionCreate, async (i) => {
         )
         .setTimestamp();
 
-      await i.reply({ content: "✅ 報告を送信しました。ご協力ありがとうございます。", ephemeral: true });
+      await silentReply(i);
 
-      const reportUserId = g2.dynamicVC?.msgRelayReportUserId;
-      let targetUser = null;
-      if (reportUserId) {
-        targetUser = await client.users.fetch(reportUserId).catch(() => null);
-      }
-      if (!targetUser) {
-        // 未設定の場合はサーバーオーナーにDM
+      const reportUserIds = g2.dynamicVC?.msgRelayReportUserIds || (g2.dynamicVC?.msgRelayReportUserId ? [g2.dynamicVC.msgRelayReportUserId] : []);
+      if (reportUserIds.length > 0) {
+        for (const uid of reportUserIds) {
+          const u = await client.users.fetch(uid).catch(() => null);
+          if (u) await u.send({ embeds: [reportEmbed] }).catch(() => {});
+        }
+      } else {
         const owner = await i.guild.fetchOwner().catch(() => null);
-        targetUser = owner?.user || null;
+        if (owner) await owner.send({ embeds: [reportEmbed] }).catch(() => {});
       }
-      if (targetUser) await targetUser.send({ embeds: [reportEmbed] }).catch(console.error);
       return;
     }
     if (cid === "msg_relay_cutoff_modal") {
@@ -1152,7 +1152,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const val = i.values[0];
       if (field === "src") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelaySourceChannelId": val } });
       else if (field === "dst") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayDestChannelId": val } });
-      else if (field === "rpt") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayReportUserId": val } });
+      else if (field === "rpt") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayReportUserIds": i.values } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "msg_relay", updatedG));
       return;
@@ -1324,7 +1324,7 @@ const handleIntroUpdate = async (msg, type = "create") => {
     const bio = await updateIntro(gid, uid, introData);
     if (type === "create" && msg.channelId === checkCh) {
       if (bio.warnMsgId) { try { await (await msg.guild.channels.cache.get(checkCh).messages.fetch(bio.warnMsgId)).delete(); } catch { } await Intro.updateOne({ _id: bio._id }, { $set: { warnMsgId: null } }); }
-      msg.reply({ content: (g.messages.introNotify || "✅ 確認").replace(/{user}/g, uid).replace(/\\n/g, '\n') }).then(r => setTimeout(() => r.delete().catch(() => { }), 10000));
+      // msg.reply({ content: (g.messages.introNotify || "✅ 確認").replace(/{user}/g, uid).replace(/\\n/g, '\n') }).then(r => setTimeout(() => r.delete().catch(() => { }), 10000));
     }
   }
 };
