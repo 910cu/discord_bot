@@ -973,9 +973,9 @@ client.on(Events.InteractionCreate, async (i) => {
       const targetVcId = i.customId.replace("vc_tts_start_select_", "");
       const vc = i.member.voice.channel;
       if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
-      
+
       const selectedVoice = i.values[0];
-      
+
       try {
         const connection = joinVoiceChannel({ channelId: vc.id, guildId: vc.guild.id, adapterCreator: vc.guild.voiceAdapterCreator });
         const player = createAudioPlayer();
@@ -1215,10 +1215,10 @@ async function updateMemberCountChannels(guild) {
   const chId = dynamicVC.memberCountChannelId;
   if (!chId) return;
 
-  // ロールメンバー数を取得
+  // ロールメンバー数を取得 (強制フェッチでキャッシュを最新化)
   let maleCount = 0, femaleCount = 0, totalCount = 0;
   try {
-    const members = await guild.members.fetch();
+    const members = await guild.members.fetch({ force: true });
     for (const m of members.values()) {
       if (m.user.bot) continue;
       totalCount++;
@@ -1236,10 +1236,8 @@ async function updateMemberCountChannels(guild) {
     const ch = await guild.channels.fetch(chId).catch(() => null);
     if (!ch) return;
     if (ch.name !== name) await ch.setName(name);
-    // ロック: @everyone の Connect を Deny
-    await ch.permissionOverwrites.edit(guild.roles.everyone, { Connect: false }).catch(() => {});
-    // 一番上に移動
-    await ch.setPosition(0).catch(() => {});
+    // 一番上に移動 (ロックなし)
+    await ch.setPosition(0).catch(() => { });
   } catch (e) {
     console.error(`[MemberCount] チャンネル更新エラー (${chId}): ${e.message}`);
   }
@@ -1260,8 +1258,7 @@ async function clearMemberCountChannels(guild) {
     // 元の名前に戻す
     const restoreName = origName || "カウンター";
     if (ch.name !== restoreName) await ch.setName(restoreName);
-    // ロック解除: Connect の上書きを削除
-    await ch.permissionOverwrites.delete(guild.roles.everyone).catch(() => {});
+    // 権限変更なし（ロックしていないため不要）
   } catch (e) {
     console.error(`[MemberCount] チャンネル復元エラー (${chId}): ${e.message}`);
   }
@@ -1277,12 +1274,9 @@ function scheduleMemberCountUpdate(guild) {
 
 client.on(Events.GuildMemberAdd, (member) => scheduleMemberCountUpdate(member.guild));
 client.on(Events.GuildMemberRemove, (member) => scheduleMemberCountUpdate(member.guild));
+// ロール変更を確実に捕捉するため、すべてのメンバー更新でトリガー
 client.on(Events.GuildMemberUpdate, (oldMember, newMember) => {
-  // ロール変更があった場合のみ更新
-  if (oldMember.roles.cache.size !== newMember.roles.cache.size ||
-      ![...oldMember.roles.cache.keys()].every(id => newMember.roles.cache.has(id))) {
-    scheduleMemberCountUpdate(newMember.guild);
-  }
+  scheduleMemberCountUpdate(newMember.guild);
 });
 
 // ─── 起動処理 ────────────────────────────────────────────────────────────────
