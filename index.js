@@ -238,6 +238,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
   const guildName = guild ? guild.name : "Unknown Server";
 
   const on = "●", off = "○";
+  const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
   let embed = new EmbedBuilder().setColor(0x2b2d31);
   let components = [];
 
@@ -248,7 +249,6 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("config_messages", "💬 メッセージ編集", ButtonStyle.Secondary)])
     ];
   } else if (type === "msg_relay") {
-    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
     const isEnabled = features.msgRelayEnabled;
     let subDesc = "### 📨 メッセージ転送設定\n指定チャンネルの投稿を別チャンネルへ自動転送します。\n省略文字列を設定すると、その文字列以降は送信されません。\n\n";
     subDesc += `**状態**: [ ${fStatus("msgRelayEnabled")} ]\n`;
@@ -266,7 +266,6 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("cfg_btn_ch_features", "⬅️ 戻る")])
     ];
   } else if (type === "member_count") {
-    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
     const fmt = dynamicVC.memberCountFormat || "♂ {male}人・♀ {female}人・👤 {total}人";
     const previewName = fmt.replace("{male}", "39").replace("{female}", "52").replace("{total}", "91");
     let subDesc = "### 👥 人数カウンター設定\n1つのボイスチャンネルに男性・女性・合計人数を横並びで表示します。\n\n";
@@ -298,7 +297,6 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     ];
   } else if (type === "vc_features") {
     const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
-    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
     let subDesc = "### 🎙️ VC内機能設定\n各機能の詳細設定や有効化・無効化が行えます。\n\n";
     subDesc += `**💤 AFK (寝落ち)** [ ${fStatus("afkEnabled")} ]\n┕ 移動先: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**🖼️ 自己紹介表示** [ ${fStatus("vcIntroDisplayEnabled")} ]\n┕ ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥"}\n\n`;
@@ -1405,7 +1403,7 @@ async function updateMemberCountChannels(guild) {
   // ロールメンバー数を取得 (強制フェッチでキャッシュを最新化)
   let maleCount = 0, femaleCount = 0, totalCount = 0;
   try {
-    const members = await guild.members.fetch({ force: true });
+    const members = await guild.members.fetch();
     for (const m of members.values()) {
       if (m.user.bot) continue;
       totalCount++;
