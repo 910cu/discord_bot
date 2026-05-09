@@ -248,15 +248,18 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     ];
   } else if (type === "member_count") {
     const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
+    const fmt = dynamicVC.memberCountFormat || "♂ {male}人・♀ {female}人・👤 {total}人";
+    const previewName = fmt.replace("{male}", "39").replace("{female}", "52").replace("{total}", "91");
     let subDesc = "### 👥 人数カウンター設定\n1つのボイスチャンネルに男性・女性・合計人数を横並びで表示します。\n\n";
     subDesc += `**状態**: [ ${fStatus("memberCountEnabled")} ]\n`;
-    subDesc += `**📍 表示チャンネル**: ${dynamicVC.memberCountChannelId ? `<#${dynamicVC.memberCountChannelId}>` : "`未設定` 🟥"}\n\n`;
-    subDesc += `**表示形式**: \`♂ ${dynamicVC.memberCountChannelId ? "XX" : "?"}人・♀ ${dynamicVC.memberCountChannelId ? "XX" : "?"}人・👤 ${dynamicVC.memberCountChannelId ? "XX" : "?"}人\`\n\n`;
-    subDesc += `-# 男性・女性ロールは「🚧 部屋制限」の設定と共通です。ボイスチャンネルを選択すると自動でロックし一番上に表示されます。`;
+    subDesc += `**📍 表示チャンネル**: ${dynamicVC.memberCountChannelId ? `<#${dynamicVC.memberCountChannelId}>` : "`未設定` 🟥"}\n`;
+    subDesc += `**📝 表示形式**: \`${fmt}\`\n`;
+    subDesc += `**🔍 プレビュー**: \`${previewName}\`\n\n`;
+    subDesc += `-# \`{male}\`=男性数 / \`{female}\`=女性数 / \`{total}\`=合計数 で要のチャンネル名に使えます。`;
     embed.setTitle(null).setDescription(subDesc);
     const isEnabled = features.memberCountEnabled;
     components = [
-      createRow([createBtn("toggle_member_count", `カウンター: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_member_count_update", "🔄 今すぐ更新", ButtonStyle.Secondary, !isEnabled)]),
+      createRow([createBtn("toggle_member_count", `カウンター: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_member_count_update", "🔄 今すぐ更新", ButtonStyle.Secondary, !isEnabled), createBtn("cfg_member_count_format", "📝 表示形式編集", ButtonStyle.Secondary, !isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_mc_main").setPlaceholder(isEnabled ? "📍 カウンター表示チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!isEnabled)]),
       createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
@@ -728,6 +731,20 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateMemberCountChannels(i.guild);
       return i.editReply({ content: "✅ カウンターを更新しました！" });
     }
+    if (cid === "cfg_member_count_format") {
+      const currentFmt = g.dynamicVC.memberCountFormat || "♂ {male}人・♀ {female}人・👤 {total}人";
+      return i.showModal(
+        new ModalBuilder().setCustomId("member_count_format_modal").setTitle("表示形式編集")
+          .addComponents(createRow([new TextInputBuilder()
+            .setCustomId("fmt")
+            .setLabel("チャンネル名の形式 (\u30d7レースホルダー使用可)")
+            .setStyle(TextInputStyle.Short)
+            .setValue(currentFmt)
+            .setPlaceholder("♂ {male}人・♀ {female}人・👤 {total}人")
+            .setRequired(true)
+          ]))
+      );
+    }
     const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled", toggle_recruit: "recruitEnabled", toggle_member_count: "memberCountEnabled" };
     if (toggles[cid]) {
       const key = toggles[cid];
@@ -922,6 +939,14 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateGuildConfig(gid, { $set: { "dynamicVC.vcSlots": slots } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
+    }
+    if (cid === "member_count_format_modal") {
+      const fmt = i.fields.getTextInputValue("fmt").trim();
+      await updateGuildConfig(gid, { $set: { "dynamicVC.memberCountFormat": fmt } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "member_count", updatedG));
+      await updateMemberCountChannels(i.guild);
+      return;
     }
     if (cid.startsWith("msg_submit_")) {
       const isIntro = cid.includes("intro"), keys = isIntro ? ["introNotify", "introWarnMsg", "introKickDM"] : ["limitLockedWarning", "genderMaleOnlyDM", "genderFemaleOnlyDM"];
@@ -1231,7 +1256,8 @@ async function updateMemberCountChannels(guild) {
   }
 
   // 1チャンネルに横並びで表示
-  const name = `♂ ${maleCount}人・♀ ${femaleCount}人・👤 ${totalCount}人`;
+  const fmt = dynamicVC.memberCountFormat || "♂ {male}人・♀ {female}人・👤 {total}人";
+  const name = fmt.replace("{male}", maleCount).replace("{female}", femaleCount).replace("{total}", totalCount);
   try {
     const ch = await guild.channels.fetch(chId).catch(() => null);
     if (!ch) return;
