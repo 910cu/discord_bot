@@ -255,7 +255,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     subDesc += `**状態**: [ ${fStatus("msgRelayEnabled")} ]\n`;
     subDesc += `**📥 転送元**: ${dynamicVC.msgRelaySourceChannelId ? `<#${dynamicVC.msgRelaySourceChannelId}>` : "`未設定` 🟥"}\n`;
     subDesc += `**📤 転送先**: ${dynamicVC.msgRelayDestChannelId ? `<#${dynamicVC.msgRelayDestChannelId}>` : "`未設定` 🟥"}\n`;
-    subDesc += `**⚠️ 報告通知先**: ${dynamicVC.msgRelayReportChannelId ? `<#${dynamicVC.msgRelayReportChannelId}>` : "`未設定` (報告機能なし)"}\n`;
+    subDesc += `**⚠️ 報告通知先**: ${dynamicVC.msgRelayReportUserId ? `<@${dynamicVC.msgRelayReportUserId}>` : "`未設定` (未設定時はオーナーにDM)"}\n`;
     subDesc += `**✂️ 省略文字列**: ${dynamicVC.msgRelayCutoff ? `\`${dynamicVC.msgRelayCutoff}\`` : "`未設定` (全文転送)"}\n\n`;
     subDesc += `-# 省略文字列が含まれる行から下は転送されません。投稿者のアイコン・名前付きで転送されます。`;
     embed.setTitle(null).setDescription(subDesc);
@@ -263,7 +263,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("toggle_msg_relay", `転送: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_msg_relay_cutoff", "✂️ 省略文字列", ButtonStyle.Secondary, !isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_src").setPlaceholder(isEnabled ? "📥 転送元チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_dst").setPlaceholder(isEnabled ? "📤 転送先チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
-      createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_rpt").setPlaceholder(isEnabled ? "⚠️ 報告通知先チャンネルを選択 (任意)" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
+      createRow([new UserSelectMenuBuilder().setCustomId("select_cfg_relay_rpt").setPlaceholder(isEnabled ? "⚠️ 報告通知先ユーザーを選択 (任意)" : "⛔ 無効なため設定不可").setDisabled(!isEnabled)]),
       createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else if (type === "member_count") {
@@ -1003,8 +1003,6 @@ client.on(Events.InteractionCreate, async (i) => {
       const msgLink = `https://discord.com/channels/${gid}/${i.channelId}/${i.message?.id}`;
 
       const g2 = await getGuildConfig(gid);
-      const reportChId = g2.dynamicVC?.msgRelayReportChannelId;
-
       const reportEmbed = new EmbedBuilder()
         .setColor(0xed4245)
         .setTitle("⚠️ 投稿内容に問題が報告されました")
@@ -1018,14 +1016,17 @@ client.on(Events.InteractionCreate, async (i) => {
 
       await i.reply({ content: "✅ 報告を送信しました。ご協力ありがとうございます。", ephemeral: true });
 
-      if (reportChId) {
-        const reportCh = i.guild.channels.cache.get(reportChId);
-        if (reportCh) await reportCh.send({ embeds: [reportEmbed] }).catch(console.error);
-      } else {
-        // 報告先が未設定ならサーバーオーナーにDM
-        const owner = await i.guild.fetchOwner().catch(() => null);
-        if (owner) await owner.send({ embeds: [reportEmbed] }).catch(console.error);
+      const reportUserId = g2.dynamicVC?.msgRelayReportUserId;
+      let targetUser = null;
+      if (reportUserId) {
+        targetUser = await client.users.fetch(reportUserId).catch(() => null);
       }
+      if (!targetUser) {
+        // 未設定の場合はサーバーオーナーにDM
+        const owner = await i.guild.fetchOwner().catch(() => null);
+        targetUser = owner?.user || null;
+      }
+      if (targetUser) await targetUser.send({ embeds: [reportEmbed] }).catch(console.error);
       return;
     }
     if (cid === "msg_relay_cutoff_modal") {
@@ -1151,7 +1152,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const val = i.values[0];
       if (field === "src") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelaySourceChannelId": val } });
       else if (field === "dst") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayDestChannelId": val } });
-      else if (field === "rpt") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayReportChannelId": val } });
+      else if (field === "rpt") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayReportUserId": val } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "msg_relay", updatedG));
       return;
