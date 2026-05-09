@@ -749,9 +749,14 @@ client.on(Events.InteractionCreate, async (i) => {
       await updateGuildConfig(gid, { $set: { features: newFeatures } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, nextType, updatedG));
-      // カウンター有効化時は即時更新
-      if (key === "memberCountEnabled" && !g.features.memberCountEnabled) {
-        await updateMemberCountChannels(i.guild);
+      if (key === "memberCountEnabled") {
+        if (!g.features.memberCountEnabled) {
+          // 有効化: 即時カウンター更新（ロック＋移動含む）
+          await updateMemberCountChannels(i.guild);
+        } else {
+          // 無効化: チャンネル名を元に戻す＋ロック解除
+          await clearMemberCountChannels(i.guild);
+        }
       }
     }
 
@@ -1029,8 +1034,14 @@ client.on(Events.InteractionCreate, async (i) => {
       const field = i.customId.replace("select_cfg_mc_", "");
       const val = i.values[0];
       const keyMap = { male: "memberCountMaleChannelId", female: "memberCountFemaleChannelId", total: "memberCountTotalChannelId" };
+      const origKeyMap = { male: "memberCountMaleOriginalName", female: "memberCountFemaleOriginalName", total: "memberCountTotalOriginalName" };
       if (keyMap[field]) {
-        await updateGuildConfig(gid, { $set: { [`dynamicVC.${keyMap[field]}`]: val } });
+        // 元のチャンネル名を保存
+        const ch = i.guild.channels.cache.get(val);
+        const origName = ch ? ch.name : null;
+        const updateSet = { [`dynamicVC.${keyMap[field]}`]: val };
+        if (origName) updateSet[`dynamicVC.${origKeyMap[field]}`] = origName;
+        await updateGuildConfig(gid, { $set: updateSet });
         const updatedG = await getGuildConfig(gid, true);
         await i.update(await getSettingsPayload(gid, "member_count", updatedG));
         await updateMemberCountChannels(i.guild);
@@ -1224,21 +1235,56 @@ async function updateMemberCountChannels(guild) {
   }
 
   const updates = [
-    { chId: dynamicVC.memberCountMaleChannelId, name: `♂ 男性: ${maleCount}人` },
+    { chId: dynamicVC.memberCountMaleChannelId,   name: `♂ 男性: ${maleCount}人` },
     { chId: dynamicVC.memberCountFemaleChannelId, name: `♀ 女性: ${femaleCount}人` },
-    { chId: dynamicVC.memberCountTotalChannelId, name: `👤 合計: ${totalCount}人` }
+    { chId: dynamicVC.memberCountTotalChannelId,  name: `👤 合計: ${totalCount}人` }
   ];
 
-  for (const { chId, name } of updates) {
+  for (let idx = 0; idx < updates.length; idx++) {
+    const { chId, name } = updates[idx];
     if (!chId) continue;
     try {
-      const ch = guild.channels.cache.get(chId);
-      if (ch && ch.name !== name) await ch.setName(name);
+      const ch = await guild.channels.fetch(chId).catch(() => null);
+      if (!ch) continue;
+      // チャンネル名更新
+      if (ch.name !== name) await ch.setName(name);
+      // ロック: @everyone の Connect を Deny
+      await ch.permissionOverwrites.edit(guild.roles.everyone, { Connect: false }).catch(() => {});
+      // 一番上に移動（position=0）
+      await ch.setPosition(0).catch(() => {});
     } catch (e) {
-      console.error(`[MemberCount] チャンネル名更新エラー (${chId}): ${e.message}`);
+      console.error(`[MemberCount] チャンネル更新エラー (${chId}): ${e.message}`);
     }
   }
   console.log(`[MemberCount] ${guild.name}: ♂${maleCount} ♀${femaleCount} 👤${totalCount}`);
+}
+
+async function clearMemberCountChannels(guild) {
+  const gid = guild.id;
+  const g = await getGuildConfig(gid);
+  const dynamicVC = g.dynamicVC || {};
+
+  const targets = [
+    { chId: dynamicVC.memberCountMaleChannelId,   origName: dynamicVC.memberCountMaleOriginalName },
+    { chId: dynamicVC.memberCountFemaleChannelId, origName: dynamicVC.memberCountFemaleOriginalName },
+    { chId: dynamicVC.memberCountTotalChannelId,  origName: dynamicVC.memberCountTotalOriginalName }
+  ];
+
+  for (const { chId, origName } of targets) {
+    if (!chId) continue;
+    try {
+      const ch = await guild.channels.fetch(chId).catch(() => null);
+      if (!ch) continue;
+      // 元の名前に戻す
+      const restoreName = origName || "カウンター";
+      if (ch.name !== restoreName) await ch.setName(restoreName);
+      // ロック解除: Connect の上書きを削除
+      await ch.permissionOverwrites.delete(guild.roles.everyone).catch(() => {});
+    } catch (e) {
+      console.error(`[MemberCount] チャンネル復元エラー (${chId}): ${e.message}`);
+    }
+  }
+  console.log(`[MemberCount] ${guild.name}: カウンター無効化 - チャンネルを復元しました`);
 }
 
 function scheduleMemberCountUpdate(guild) {
