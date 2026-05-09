@@ -255,6 +255,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     subDesc += `**状態**: [ ${fStatus("msgRelayEnabled")} ]\n`;
     subDesc += `**📥 転送元**: ${dynamicVC.msgRelaySourceChannelId ? `<#${dynamicVC.msgRelaySourceChannelId}>` : "`未設定` 🟥"}\n`;
     subDesc += `**📤 転送先**: ${dynamicVC.msgRelayDestChannelId ? `<#${dynamicVC.msgRelayDestChannelId}>` : "`未設定` 🟥"}\n`;
+    subDesc += `**⚠️ 報告通知先**: ${dynamicVC.msgRelayReportChannelId ? `<#${dynamicVC.msgRelayReportChannelId}>` : "`未設定` (報告機能なし)"}\n`;
     subDesc += `**✂️ 省略文字列**: ${dynamicVC.msgRelayCutoff ? `\`${dynamicVC.msgRelayCutoff}\`` : "`未設定` (全文転送)"}\n\n`;
     subDesc += `-# 省略文字列が含まれる行から下は転送されません。投稿者のアイコン・名前付きで転送されます。`;
     embed.setTitle(null).setDescription(subDesc);
@@ -262,6 +263,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("toggle_msg_relay", `転送: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_msg_relay_cutoff", "✂️ 省略文字列", ButtonStyle.Secondary, !isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_src").setPlaceholder(isEnabled ? "📥 転送元チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_dst").setPlaceholder(isEnabled ? "📤 転送先チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
+      createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_rpt").setPlaceholder(isEnabled ? "⚠️ 報告通知先チャンネルを選択 (任意)" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
       createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else if (type === "member_count") {
@@ -628,6 +630,24 @@ client.on(Events.InteractionCreate, async (i) => {
       const vc = i.member.voice.channel; if (!vc || vc.id !== i.channelId) return i.reply({ content: "このVCに参加中のみ可", ephemeral: true });
       return i.reply({ content: "移動させる人を選択", components: [createRow([new UserSelectMenuBuilder().setCustomId(`vc_afk_select_${vc.id}`).setPlaceholder("選択").setMaxValues(1)])], ephemeral: true });
     }
+    // 報告ボタン
+    if (cid.startsWith("relay_rpt_")) {
+      const reportedUserId = cid.replace("relay_rpt_", "");
+      const member = await i.guild.members.fetch(reportedUserId).catch(() => null);
+      const displayName = member?.displayName || reportedUserId;
+      return i.showModal(
+        new ModalBuilder().setCustomId(`relay_rpt_modal_${reportedUserId}`).setTitle("問題報告")
+          .addComponents(
+            createRow([new TextInputBuilder()
+              .setCustomId("reason")
+              .setLabel(`「${displayName}」に問題がある理由を入力してください`)
+              .setStyle(TextInputStyle.Paragraph)
+              .setPlaceholder("例: 記載内容に単純な広告が含まれている")
+              .setRequired(true)
+            ])
+          )
+      );
+    }
     if (cid === "cfg_back_main") return i.update(await getSettingsPayload(gid, "main", g));
     if (cid === "cfg_btn_raw") {
       const json = JSON.stringify(g, null, 2);
@@ -972,6 +992,42 @@ client.on(Events.InteractionCreate, async (i) => {
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
     }
+    if (cid.startsWith("relay_rpt_modal_")) {
+      const reportedUserId = cid.replace("relay_rpt_modal_", "");
+      const reason = i.fields.getTextInputValue("reason");
+      const reporter = i.member;
+      const reportedMember = await i.guild.members.fetch(reportedUserId).catch(() => null);
+
+      // 元の転送メッセージを参照
+      const relayedContent = i.message?.content || "";
+      const msgLink = `https://discord.com/channels/${gid}/${i.channelId}/${i.message?.id}`;
+
+      const g2 = await getGuildConfig(gid);
+      const reportChId = g2.dynamicVC?.msgRelayReportChannelId;
+
+      const reportEmbed = new EmbedBuilder()
+        .setColor(0xed4245)
+        .setTitle("⚠️ 投稿内容に問題が報告されました")
+        .addFields(
+          { name: "👤 報告対象", value: reportedMember ? `<@${reportedUserId}> (${reportedMember.displayName})` : `<@${reportedUserId}>`, inline: true },
+          { name: "🚨 報告者", value: `<@${reporter.id}> (${reporter.displayName})`, inline: true },
+          { name: "📝 報告内容", value: reason },
+          { name: "🔗 元の投稿先", value: `[${i.channel?.name || "チャンネル"}](${msgLink})` }
+        )
+        .setTimestamp();
+
+      await i.reply({ content: "✅ 報告を送信しました。ご協力ありがとうございます。", ephemeral: true });
+
+      if (reportChId) {
+        const reportCh = i.guild.channels.cache.get(reportChId);
+        if (reportCh) await reportCh.send({ embeds: [reportEmbed] }).catch(console.error);
+      } else {
+        // 報告先が未設定ならサーバーオーナーにDM
+        const owner = await i.guild.fetchOwner().catch(() => null);
+        if (owner) await owner.send({ embeds: [reportEmbed] }).catch(console.error);
+      }
+      return;
+    }
     if (cid === "msg_relay_cutoff_modal") {
       const cutoff = i.fields.getTextInputValue("cutoff").trim();
       await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayCutoff": cutoff || null } });
@@ -1095,6 +1151,7 @@ client.on(Events.InteractionCreate, async (i) => {
       const val = i.values[0];
       if (field === "src") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelaySourceChannelId": val } });
       else if (field === "dst") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayDestChannelId": val } });
+      else if (field === "rpt") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayReportChannelId": val } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "msg_relay", updatedG));
       return;
@@ -1293,7 +1350,7 @@ client.on(Events.MessageCreate, async (msg) => {
     if (cutIdx !== -1) content = lines.slice(0, cutIdx).join("\n");
   }
   content = content.trim();
-  if (!content && msg.attachments.size === 0) return; // 空なら転送しない
+  if (!content && msg.attachments.size === 0) return;
 
   const destCh = msg.guild.channels.cache.get(dvc.msgRelayDestChannelId);
   if (!destCh) return;
@@ -1312,10 +1369,22 @@ client.on(Events.MessageCreate, async (msg) => {
     });
   } catch (e) {
     console.error(`[MsgRelay] 転送エラー: ${e.message}`);
-    // フォールバック: 通常送信
     const fallback = [`**${msg.member?.displayName || msg.author.username}**: ${content}`, ...[...msg.attachments.values()].map(a => a.url)].join("\n");
     await destCh.send({ content: fallback, flags: [MessageFlags.SuppressNotifications] }).catch(() => {});
   }
+
+  // 報告ボタン付きメッセージを追加送信
+  const reportRow = createRow([
+    new ButtonBuilder()
+      .setCustomId(`relay_rpt_${msg.author.id}`)
+      .setLabel("⚠️ 問題を報告")
+      .setStyle(ButtonStyle.Danger)
+  ]);
+  await destCh.send({
+    content: `-# ↑ <@${msg.author.id}> の投稿`,
+    components: [reportRow],
+    flags: [MessageFlags.SuppressNotifications]
+  }).catch(() => {});
 });
 
 // ─── 人数カウンター ───────────────────────────────────────────────────────────
