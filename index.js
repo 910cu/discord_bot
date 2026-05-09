@@ -277,7 +277,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     embed.setTitle(null).setDescription(subDesc);
     const isEnabled = features.memberCountEnabled;
     components = [
-      createRow([createBtn("toggle_member_count", `カウンター: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_member_count_update", "🔄 今すぐ更新", ButtonStyle.Secondary, !isEnabled), createBtn("cfg_member_count_format", "📝 表示形式編集", ButtonStyle.Secondary, !isEnabled)]),
+      createRow([createBtn("toggle_member_count", `カウンター: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_member_count_update", "🔄 今すぐ更新", ButtonStyle.Secondary, !isEnabled), createBtn("cfg_member_count_format", "📝 表示形式編集", ButtonStyle.Secondary, !isEnabled), createBtn("cfg_member_count_details", "📋 詳細確認", ButtonStyle.Secondary, !isEnabled)]),
       createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_mc_main").setPlaceholder(isEnabled ? "📍 カウンター表示チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!isEnabled)]),
       createRow([createBtn("cfg_btn_ch_features", "⬅️ 戻る")])
     ];
@@ -646,6 +646,38 @@ client.on(Events.InteractionCreate, async (i) => {
             ])
           )
       );
+    }
+    if (cid === "cfg_member_count_details") {
+      await i.deferReply({ ephemeral: true });
+      const roles = g.roles || {};
+      try {
+        const members = await i.guild.members.fetch();
+        const humans = members.filter(m => !m.user.bot);
+        const males = roles.male ? humans.filter(m => m.roles.cache.has(roles.male)) : [];
+        const females = roles.female ? humans.filter(m => m.roles.cache.has(roles.female)) : [];
+        const others = humans.filter(m => !males.has?.(m.id) && !females.has?.(m.id));
+
+        const listNames = (col, max = 20) => {
+          if (!col || col.size === 0) return "なし";
+          const names = col.map(m => m.displayName);
+          if (names.length <= max) return names.join(", ");
+          return names.slice(0, max).join(", ") + ` ほか ${names.length - max}名`;
+        };
+
+        const embed = new EmbedBuilder()
+          .setTitle("👥 メンバー内訳詳細")
+          .setColor(0x5865f2)
+          .addFields(
+            { name: `♂ 男性 (${males.size || 0}人)`, value: listNames(males) },
+            { name: `♀ 女性 (${females.size || 0}人)`, value: listNames(females) },
+            { name: `👤 その他 (${others.size || 0}人)`, value: listNames(others) }
+          )
+          .setFooter({ text: `合計 (ボット除外): ${humans.size}人` })
+          .setTimestamp();
+        return i.editReply({ embeds: [embed] });
+      } catch (e) {
+        return i.editReply({ content: `❌ 取得エラー: ${e.message}` });
+      }
     }
     if (cid === "cfg_back_main") return i.update(await getSettingsPayload(gid, "main", g));
     if (cid === "cfg_btn_raw") {
@@ -1401,18 +1433,19 @@ async function updateMemberCountChannels(guild) {
   if (!chId) return;
 
   // ロールメンバー数を取得
-  let maleCount = 0, femaleCount = 0, totalCount = guild.memberCount;
+  let maleCount = 0, femaleCount = 0, totalCount = 0;
   try {
-    // キャッシュを最新にするため、必要なロールのメンバーのみを取得 (全メンバー取得より遥かに軽量)
-    const roleIds = [roles.male, roles.female].filter(Boolean);
-    if (roleIds.length > 0) {
-      const fetchedMembers = await guild.members.fetch({ user: [], role: roleIds });
-      maleCount = roles.male ? (guild.roles.cache.get(roles.male)?.members.size || 0) : 0;
-      femaleCount = roles.female ? (guild.roles.cache.get(roles.female)?.members.size || 0) : 0;
-    }
+    // キャッシュを最新にするためフェッチ (ボット除外のためフィルタリング)
+    const members = await guild.members.fetch();
+    const humans = members.filter(m => !m.user.bot);
+    totalCount = humans.size;
+    maleCount = roles.male ? humans.filter(m => m.roles.cache.has(roles.male)).size : 0;
+    femaleCount = roles.female ? humans.filter(m => m.roles.cache.has(roles.female)).size : 0;
   } catch (e) {
     console.error(`[MemberCount] メンバー取得エラー: ${e.message}`);
-    // フェッチに失敗してもキャッシュがあれば続行
+    // 失敗時はキャッシュで代行 (不正確な可能性あり)
+    const humans = guild.members.cache.filter(m => !m.user.bot);
+    totalCount = humans.size;
     maleCount = roles.male ? (guild.roles.cache.get(roles.male)?.members.size || 0) : 0;
     femaleCount = roles.female ? (guild.roles.cache.get(roles.female)?.members.size || 0) : 0;
   }
