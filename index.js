@@ -1400,19 +1400,21 @@ async function updateMemberCountChannels(guild) {
   const chId = dynamicVC.memberCountChannelId;
   if (!chId) return;
 
-  // ロールメンバー数を取得 (強制フェッチでキャッシュを最新化)
-  let maleCount = 0, femaleCount = 0, totalCount = 0;
+  // ロールメンバー数を取得
+  let maleCount = 0, femaleCount = 0, totalCount = guild.memberCount;
   try {
-    const members = await guild.members.fetch();
-    for (const m of members.values()) {
-      if (m.user.bot) continue;
-      totalCount++;
-      if (roles.male && m.roles.cache.has(roles.male)) maleCount++;
-      if (roles.female && m.roles.cache.has(roles.female)) femaleCount++;
+    // キャッシュを最新にするため、必要なロールのメンバーのみを取得 (全メンバー取得より遥かに軽量)
+    const roleIds = [roles.male, roles.female].filter(Boolean);
+    if (roleIds.length > 0) {
+      const fetchedMembers = await guild.members.fetch({ user: [], role: roleIds });
+      maleCount = roles.male ? (guild.roles.cache.get(roles.male)?.members.size || 0) : 0;
+      femaleCount = roles.female ? (guild.roles.cache.get(roles.female)?.members.size || 0) : 0;
     }
   } catch (e) {
     console.error(`[MemberCount] メンバー取得エラー: ${e.message}`);
-    return;
+    // フェッチに失敗してもキャッシュがあれば続行
+    maleCount = roles.male ? (guild.roles.cache.get(roles.male)?.members.size || 0) : 0;
+    femaleCount = roles.female ? (guild.roles.cache.get(roles.female)?.members.size || 0) : 0;
   }
 
   // 1チャンネルに横並びで表示
@@ -1487,7 +1489,8 @@ client.once(Events.ClientReady, async () => {
     await syncIntroHistory(gid);
     await updateMemberCountChannels(guild);
 
-    // データ移行 (introDB.json -> MongoDB)
+    // サーバー間の処理に少し間隔を置く (レートリミット対策)
+    await new Promise(resolve => setTimeout(resolve, 2000));
     if (fs.existsSync("./introDB.json")) {
       try {
         const localIntro = JSON.parse(fs.readFileSync("./introDB.json", "utf-8"));
