@@ -151,7 +151,8 @@ const defaultFeatures = {
   introKickEnabled: false,
   vcIntroDisplayEnabled: false,
   genderRoleEnabled: false,
-  memberCountEnabled: false
+  memberCountEnabled: false,
+  msgRelayEnabled: false
 };
 
 const defaultDynamicVC = {
@@ -244,7 +245,24 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     embed.setTitle(null).setDescription(`# ${guildName}\n-# v1.2.0 (Multi-Guild Mode)\n\n### ⚙️ 設定カテゴリを選択してください\n各カテゴリーから、機能の有効化やチャンネル・ロールの詳細設定が行えます。`);
     components = [
       createRow([createBtn("cfg_btn_ch_features", "📺 チャンネル機能", ButtonStyle.Primary), createBtn("cfg_btn_vc_features", "🎙️ VC内機能", ButtonStyle.Primary)]),
-      createRow([createBtn("cfg_btn_member_count", "👥 人数カウンター", ButtonStyle.Primary), createBtn("config_messages", "💬 メッセージ編集", ButtonStyle.Secondary)])
+      createRow([createBtn("cfg_btn_member_count", "👥 人数カウンター", ButtonStyle.Primary), createBtn("cfg_btn_msg_relay", "📨 メッセージ転送", ButtonStyle.Primary)]),
+      createRow([createBtn("config_messages", "💬 メッセージ編集", ButtonStyle.Secondary)])
+    ];
+  } else if (type === "msg_relay") {
+    const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
+    const isEnabled = features.msgRelayEnabled;
+    let subDesc = "### 📨 メッセージ転送設定\n指定チャンネルの投稿を別チャンネルへ自動転送します。\n省略文字列を設定すると、その文字列以降は送信されません。\n\n";
+    subDesc += `**状態**: [ ${fStatus("msgRelayEnabled")} ]\n`;
+    subDesc += `**📥 転送元**: ${dynamicVC.msgRelaySourceChannelId ? `<#${dynamicVC.msgRelaySourceChannelId}>` : "`未設定` 🟥"}\n`;
+    subDesc += `**📤 転送先**: ${dynamicVC.msgRelayDestChannelId ? `<#${dynamicVC.msgRelayDestChannelId}>` : "`未設定` 🟥"}\n`;
+    subDesc += `**✂️ 省略文字列**: ${dynamicVC.msgRelayCutoff ? `\`${dynamicVC.msgRelayCutoff}\`` : "`未設定` (全文転送)"}\n\n`;
+    subDesc += `-# 省略文字列が含まれる行から下は転送されません。投稿者のアイコン・名前付きで転送されます。`;
+    embed.setTitle(null).setDescription(subDesc);
+    components = [
+      createRow([createBtn("toggle_msg_relay", `転送: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_msg_relay_cutoff", "✂️ 省略文字列", ButtonStyle.Secondary, !isEnabled)]),
+      createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_src").setPlaceholder(isEnabled ? "📥 転送元チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
+      createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_relay_dst").setPlaceholder(isEnabled ? "📤 転送先チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildText]).setDisabled(!isEnabled)]),
+      createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else if (type === "member_count") {
     const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
@@ -745,7 +763,20 @@ client.on(Events.InteractionCreate, async (i) => {
           ]))
       );
     }
-    const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled", toggle_recruit: "recruitEnabled", toggle_member_count: "memberCountEnabled" };
+    if (cid === "cfg_msg_relay_cutoff") {
+      return i.showModal(
+        new ModalBuilder().setCustomId("msg_relay_cutoff_modal").setTitle("省略文字列設定")
+          .addComponents(createRow([new TextInputBuilder()
+            .setCustomId("cutoff")
+            .setLabel("この文字列以降を省略 (空白で解除)")
+            .setStyle(TextInputStyle.Short)
+            .setValue(g.dynamicVC.msgRelayCutoff || "")
+            .setPlaceholder("例: ～～面談日時～～")
+            .setRequired(false)
+          ]))
+      );
+    }
+    const toggles = { toggle_afk: "afkEnabled", toggle_panel: "vcPanelEnabled", toggle_vc_creation: "vcCreationEnabled", toggle_intro_kick: "introKickEnabled", toggle_vc_intro: "vcIntroDisplayEnabled", toggle_gender: "genderRoleEnabled", toggle_recruit: "recruitEnabled", toggle_member_count: "memberCountEnabled", toggle_msg_relay: "msgRelayEnabled" };
     if (toggles[cid]) {
       const key = toggles[cid];
       const newFeatures = { ...g.features, [key]: !g.features[key] };
@@ -756,7 +787,8 @@ client.on(Events.InteractionCreate, async (i) => {
         introKickEnabled: "intro_kick",
         vcIntroDisplayEnabled: "intro_display",
         genderRoleEnabled: "vc",
-        memberCountEnabled: "member_count"
+        memberCountEnabled: "member_count",
+        msgRelayEnabled: "msg_relay"
       };
       const nextType = map[key];
       await updateGuildConfig(gid, { $set: { features: newFeatures } });
@@ -940,6 +972,13 @@ client.on(Events.InteractionCreate, async (i) => {
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
     }
+    if (cid === "msg_relay_cutoff_modal") {
+      const cutoff = i.fields.getTextInputValue("cutoff").trim();
+      await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayCutoff": cutoff || null } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "msg_relay", updatedG));
+      return;
+    }
     if (cid === "member_count_format_modal") {
       const fmt = i.fields.getTextInputValue("fmt").trim();
       await updateGuildConfig(gid, { $set: { "dynamicVC.memberCountFormat": fmt } });
@@ -1051,6 +1090,15 @@ client.on(Events.InteractionCreate, async (i) => {
       }
     }
 
+    if (i.customId.startsWith("select_cfg_relay_")) {
+      const field = i.customId.replace("select_cfg_relay_", "");
+      const val = i.values[0];
+      if (field === "src") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelaySourceChannelId": val } });
+      else if (field === "dst") await updateGuildConfig(gid, { $set: { "dynamicVC.msgRelayDestChannelId": val } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "msg_relay", updatedG));
+      return;
+    }
     if (i.customId.startsWith("select_cfg_mc_")) {
       const field = i.customId.replace("select_cfg_mc_", "");
       const val = i.values[0];
@@ -1226,6 +1274,49 @@ const handleIntroUpdate = async (msg, type = "create") => {
 client.on(Events.MessageCreate, m => handleIntroUpdate(m, "create"));
 client.on(Events.MessageUpdate, (o, n) => handleIntroUpdate(n, "update"));
 client.on(Events.MessageDelete, m => handleIntroUpdate(m, "delete"));
+
+// ─── メッセージ転送 ──────────────────────────────────────────────────────────
+client.on(Events.MessageCreate, async (msg) => {
+  if (msg.author.bot || !msg.guild) return;
+  const gid = msg.guild.id;
+  const g = await getGuildConfig(gid);
+  if (!g.features.msgRelayEnabled) return;
+  const dvc = g.dynamicVC || {};
+  if (!dvc.msgRelaySourceChannelId || !dvc.msgRelayDestChannelId) return;
+  if (msg.channelId !== dvc.msgRelaySourceChannelId) return;
+
+  // コンテンツ取得 & カットオフ処理
+  let content = msg.content || "";
+  if (dvc.msgRelayCutoff) {
+    const lines = content.split("\n");
+    const cutIdx = lines.findIndex(l => l.includes(dvc.msgRelayCutoff));
+    if (cutIdx !== -1) content = lines.slice(0, cutIdx).join("\n");
+  }
+  content = content.trim();
+  if (!content && msg.attachments.size === 0) return; // 空なら転送しない
+
+  const destCh = msg.guild.channels.cache.get(dvc.msgRelayDestChannelId);
+  if (!destCh) return;
+
+  try {
+    // Webhookで投稿者の名前・アイコンで転送
+    const webhooks = await destCh.fetchWebhooks();
+    let webhook = webhooks.find(wh => wh.owner?.id === msg.client.user.id);
+    if (!webhook) webhook = await destCh.createWebhook({ name: "MessageRelay", avatar: msg.client.user.displayAvatarURL() });
+    await webhook.send({
+      content: content || undefined,
+      username: msg.member?.displayName || msg.author.username,
+      avatarURL: msg.member?.displayAvatarURL({ dynamic: true }) || msg.author.displayAvatarURL(),
+      files: [...msg.attachments.values()].map(a => a.url),
+      flags: [MessageFlags.SuppressNotifications]
+    });
+  } catch (e) {
+    console.error(`[MsgRelay] 転送エラー: ${e.message}`);
+    // フォールバック: 通常送信
+    const fallback = [`**${msg.member?.displayName || msg.author.username}**: ${content}`, ...[...msg.attachments.values()].map(a => a.url)].join("\n");
+    await destCh.send({ content: fallback, flags: [MessageFlags.SuppressNotifications] }).catch(() => {});
+  }
+});
 
 // ─── 人数カウンター ───────────────────────────────────────────────────────────
 const memberCountUpdateTimers = new Map();
