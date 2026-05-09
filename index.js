@@ -248,20 +248,16 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     ];
   } else if (type === "member_count") {
     const fStatus = (feat) => features[feat] ? "🟢 有効" : "🔴 無効";
-    const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
-    let subDesc = "### 👥 人数カウンター設定\nサーバーの男性・女性・合計人数をチャンネル名で表示します。\n\n";
-    subDesc += `**状態**: [ ${fStatus("memberCountEnabled")} ]\n\n`;
-    subDesc += `**♂️ 男性カウンター**: ${dynamicVC.memberCountMaleChannelId ? `<#${dynamicVC.memberCountMaleChannelId}>` : "`未設定` 🟥"}\n`;
-    subDesc += `**♀️ 女性カウンター**: ${dynamicVC.memberCountFemaleChannelId ? `<#${dynamicVC.memberCountFemaleChannelId}>` : "`未設定` 🟥"}\n`;
-    subDesc += `**👤 合計カウンター**: ${dynamicVC.memberCountTotalChannelId ? `<#${dynamicVC.memberCountTotalChannelId}>` : "`未設定` 🟥"}\n\n`;
-    subDesc += `-# チャンネルの名前が自動更新されます。ボイスチャンネルまたはカテゴリを選択してください。`;
+    let subDesc = "### 👥 人数カウンター設定\n1つのボイスチャンネルに男性・女性・合計人数を横並びで表示します。\n\n";
+    subDesc += `**状態**: [ ${fStatus("memberCountEnabled")} ]\n`;
+    subDesc += `**📍 表示チャンネル**: ${dynamicVC.memberCountChannelId ? `<#${dynamicVC.memberCountChannelId}>` : "`未設定` 🟥"}\n\n`;
+    subDesc += `**表示形式**: \`♂ ${dynamicVC.memberCountChannelId ? "XX" : "?"}人・♀ ${dynamicVC.memberCountChannelId ? "XX" : "?"}人・👤 ${dynamicVC.memberCountChannelId ? "XX" : "?"}人\`\n\n`;
+    subDesc += `-# 男性・女性ロールは「🚧 部屋制限」の設定と共通です。ボイスチャンネルを選択すると自動でロックし一番上に表示されます。`;
     embed.setTitle(null).setDescription(subDesc);
     const isEnabled = features.memberCountEnabled;
     components = [
       createRow([createBtn("toggle_member_count", `カウンター: ${isEnabled ? "有効" : "無効"}`, isEnabled ? ButtonStyle.Success : ButtonStyle.Danger), createBtn("cfg_member_count_update", "🔄 今すぐ更新", ButtonStyle.Secondary, !isEnabled)]),
-      createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_mc_male").setPlaceholder(isEnabled ? "♂️ 男性カウンターチャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildVoice, ChannelType.GuildCategory]).setDisabled(!isEnabled)]),
-      createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_mc_female").setPlaceholder(isEnabled ? "♀️ 女性カウンターチャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildVoice, ChannelType.GuildCategory]).setDisabled(!isEnabled)]),
-      createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_mc_total").setPlaceholder(isEnabled ? "👤 合計カウンターチャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildVoice, ChannelType.GuildCategory]).setDisabled(!isEnabled)]),
+      createRow([new ChannelSelectMenuBuilder().setCustomId("select_cfg_mc_main").setPlaceholder(isEnabled ? "📍 カウンター表示チャンネルを選択" : "⛔ 無効なため設定不可").setChannelTypes([ChannelType.GuildVoice]).setDisabled(!isEnabled)]),
       createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else if (type === "ch_features") {
@@ -1033,14 +1029,12 @@ client.on(Events.InteractionCreate, async (i) => {
     if (i.customId.startsWith("select_cfg_mc_")) {
       const field = i.customId.replace("select_cfg_mc_", "");
       const val = i.values[0];
-      const keyMap = { male: "memberCountMaleChannelId", female: "memberCountFemaleChannelId", total: "memberCountTotalChannelId" };
-      const origKeyMap = { male: "memberCountMaleOriginalName", female: "memberCountFemaleOriginalName", total: "memberCountTotalOriginalName" };
-      if (keyMap[field]) {
+      if (field === "main") {
         // 元のチャンネル名を保存
         const ch = i.guild.channels.cache.get(val);
         const origName = ch ? ch.name : null;
-        const updateSet = { [`dynamicVC.${keyMap[field]}`]: val };
-        if (origName) updateSet[`dynamicVC.${origKeyMap[field]}`] = origName;
+        const updateSet = { "dynamicVC.memberCountChannelId": val };
+        if (origName) updateSet["dynamicVC.memberCountOriginalName"] = origName;
         await updateGuildConfig(gid, { $set: updateSet });
         const updatedG = await getGuildConfig(gid, true);
         await i.update(await getSettingsPayload(gid, "member_count", updatedG));
@@ -1218,6 +1212,8 @@ async function updateMemberCountChannels(guild) {
 
   const roles = g.roles || {};
   const dynamicVC = g.dynamicVC || {};
+  const chId = dynamicVC.memberCountChannelId;
+  if (!chId) return;
 
   // ロールメンバー数を取得
   let maleCount = 0, femaleCount = 0, totalCount = 0;
@@ -1234,27 +1230,18 @@ async function updateMemberCountChannels(guild) {
     return;
   }
 
-  const updates = [
-    { chId: dynamicVC.memberCountMaleChannelId,   name: `♂ 男性: ${maleCount}人` },
-    { chId: dynamicVC.memberCountFemaleChannelId, name: `♀ 女性: ${femaleCount}人` },
-    { chId: dynamicVC.memberCountTotalChannelId,  name: `👤 合計: ${totalCount}人` }
-  ];
-
-  for (let idx = 0; idx < updates.length; idx++) {
-    const { chId, name } = updates[idx];
-    if (!chId) continue;
-    try {
-      const ch = await guild.channels.fetch(chId).catch(() => null);
-      if (!ch) continue;
-      // チャンネル名更新
-      if (ch.name !== name) await ch.setName(name);
-      // ロック: @everyone の Connect を Deny
-      await ch.permissionOverwrites.edit(guild.roles.everyone, { Connect: false }).catch(() => {});
-      // 一番上に移動（position=0）
-      await ch.setPosition(0).catch(() => {});
-    } catch (e) {
-      console.error(`[MemberCount] チャンネル更新エラー (${chId}): ${e.message}`);
-    }
+  // 1チャンネルに横並びで表示
+  const name = `♂ ${maleCount}人・♀ ${femaleCount}人・👤 ${totalCount}人`;
+  try {
+    const ch = await guild.channels.fetch(chId).catch(() => null);
+    if (!ch) return;
+    if (ch.name !== name) await ch.setName(name);
+    // ロック: @everyone の Connect を Deny
+    await ch.permissionOverwrites.edit(guild.roles.everyone, { Connect: false }).catch(() => {});
+    // 一番上に移動
+    await ch.setPosition(0).catch(() => {});
+  } catch (e) {
+    console.error(`[MemberCount] チャンネル更新エラー (${chId}): ${e.message}`);
   }
   console.log(`[MemberCount] ${guild.name}: ♂${maleCount} ♀${femaleCount} 👤${totalCount}`);
 }
@@ -1263,26 +1250,20 @@ async function clearMemberCountChannels(guild) {
   const gid = guild.id;
   const g = await getGuildConfig(gid);
   const dynamicVC = g.dynamicVC || {};
+  const chId = dynamicVC.memberCountChannelId;
+  const origName = dynamicVC.memberCountOriginalName;
+  if (!chId) return;
 
-  const targets = [
-    { chId: dynamicVC.memberCountMaleChannelId,   origName: dynamicVC.memberCountMaleOriginalName },
-    { chId: dynamicVC.memberCountFemaleChannelId, origName: dynamicVC.memberCountFemaleOriginalName },
-    { chId: dynamicVC.memberCountTotalChannelId,  origName: dynamicVC.memberCountTotalOriginalName }
-  ];
-
-  for (const { chId, origName } of targets) {
-    if (!chId) continue;
-    try {
-      const ch = await guild.channels.fetch(chId).catch(() => null);
-      if (!ch) continue;
-      // 元の名前に戻す
-      const restoreName = origName || "カウンター";
-      if (ch.name !== restoreName) await ch.setName(restoreName);
-      // ロック解除: Connect の上書きを削除
-      await ch.permissionOverwrites.delete(guild.roles.everyone).catch(() => {});
-    } catch (e) {
-      console.error(`[MemberCount] チャンネル復元エラー (${chId}): ${e.message}`);
-    }
+  try {
+    const ch = await guild.channels.fetch(chId).catch(() => null);
+    if (!ch) return;
+    // 元の名前に戻す
+    const restoreName = origName || "カウンター";
+    if (ch.name !== restoreName) await ch.setName(restoreName);
+    // ロック解除: Connect の上書きを削除
+    await ch.permissionOverwrites.delete(guild.roles.everyone).catch(() => {});
+  } catch (e) {
+    console.error(`[MemberCount] チャンネル復元エラー (${chId}): ${e.message}`);
   }
   console.log(`[MemberCount] ${guild.name}: カウンター無効化 - チャンネルを復元しました`);
 }
