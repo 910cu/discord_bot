@@ -650,34 +650,39 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid === "cfg_member_count_details") {
       await i.deferReply({ ephemeral: true });
       const roles = g.roles || {};
+      let isCache = false;
       try {
-        const members = await i.guild.members.fetch();
-        const humans = members.filter(m => !m.user.bot);
-        const males = roles.male ? humans.filter(m => m.roles.cache.has(roles.male)) : [];
-        const females = roles.female ? humans.filter(m => m.roles.cache.has(roles.female)) : [];
-        const others = humans.filter(m => !males.has?.(m.id) && !females.has?.(m.id));
+        const roleIds = [roles.male, roles.female].filter(Boolean);
+        if (roleIds.length > 0) {
+          // フェッチを試みるが、失敗しても無視してキャッシュを使う
+          await i.guild.members.fetch({ role: roleIds }).catch(() => { isCache = true; });
+        }
+      } catch (e) { isCache = true; }
+      
+      const humans = i.guild.members.cache.filter(m => !m.user.bot);
+      const males = roles.male ? humans.filter(m => m.roles.cache.has(roles.male)) : new Map();
+      const females = roles.female ? humans.filter(m => m.roles.cache.has(roles.female)) : new Map();
+      const others = humans.filter(m => (roles.male ? !m.roles.cache.has(roles.male) : true) && (roles.female ? !m.roles.cache.has(roles.female) : true));
 
-        const listNames = (col, max = 20) => {
-          if (!col || col.size === 0) return "なし";
-          const names = col.map(m => m.displayName);
-          if (names.length <= max) return names.join(", ");
-          return names.slice(0, max).join(", ") + ` ほか ${names.length - max}名`;
-        };
+      const listNames = (col, max = 20) => {
+        if (!col || col.size === 0) return "なし";
+        const names = col.map(m => m.displayName);
+        if (names.length <= max) return names.join(", ");
+        return names.slice(0, max).join(", ") + ` ほか ${names.length - max}名`;
+      };
 
-        const embed = new EmbedBuilder()
-          .setTitle("👥 メンバー内訳詳細")
-          .setColor(0x5865f2)
-          .addFields(
-            { name: `♂ 男性 (${males.size || 0}人)`, value: listNames(males) },
-            { name: `♀ 女性 (${females.size || 0}人)`, value: listNames(females) },
-            { name: `👤 その他 (${others.size || 0}人)`, value: listNames(others) }
-          )
-          .setFooter({ text: `合計 (ボット除外): ${humans.size}人` })
-          .setTimestamp();
-        return i.editReply({ embeds: [embed] });
-      } catch (e) {
-        return i.editReply({ content: `❌ 取得エラー: ${e.message}` });
-      }
+      const embed = new EmbedBuilder()
+        .setTitle("👥 メンバー内訳詳細")
+        .setDescription(isCache ? "-# ⚠️ Discord制限中のため、現在のキャッシュ情報を表示しています。" : "-# 最新の情報に基づいた一覧です。")
+        .setColor(isCache ? 0xe67e22 : 0x5865f2)
+        .addFields(
+          { name: `♂ 男性 (${males.size || 0}人)`, value: listNames(males) },
+          { name: `♀ 女性 (${females.size || 0}人)`, value: listNames(females) },
+          { name: `👤 その他 (${others.size || 0}人)`, value: listNames(others) }
+        )
+        .setFooter({ text: `合計 (ボット除外): 約${humans.size}人 / サーバー全体: ${i.guild.memberCount}人` })
+        .setTimestamp();
+      return i.editReply({ embeds: [embed] });
     }
     if (cid === "cfg_back_main") return i.update(await getSettingsPayload(gid, "main", g));
     if (cid === "cfg_btn_raw") {
@@ -1433,19 +1438,19 @@ async function updateMemberCountChannels(guild) {
   if (!chId) return;
 
   // ロールメンバー数を取得
-  let maleCount = 0, femaleCount = 0, totalCount = 0;
+  let maleCount = 0, femaleCount = 0, totalCount = guild.memberCount;
   try {
-    // キャッシュを最新にするためフェッチ (ボット除外のためフィルタリング)
-    const members = await guild.members.fetch();
-    const humans = members.filter(m => !m.user.bot);
-    totalCount = humans.size;
-    maleCount = roles.male ? humans.filter(m => m.roles.cache.has(roles.male)).size : 0;
-    femaleCount = roles.female ? humans.filter(m => m.roles.cache.has(roles.female)).size : 0;
+    const roleIds = [roles.male, roles.female].filter(Boolean);
+    if (roleIds.length > 0) {
+      // 全メンバーではなく特定のロールのみをフェッチ (超軽量)
+      await guild.members.fetch({ role: roleIds });
+      maleCount = roles.male ? (guild.roles.cache.get(roles.male)?.members.size || 0) : 0;
+      femaleCount = roles.female ? (guild.roles.cache.get(roles.female)?.members.size || 0) : 0;
+    }
+    // BOTを除外した正確な合計を出すには全取得が必要なため、ここでは memberCount で代用
+    // (頻繁な全取得はレートリミットの原因になるため)
   } catch (e) {
     console.error(`[MemberCount] メンバー取得エラー: ${e.message}`);
-    // 失敗時はキャッシュで代行 (不正確な可能性あり)
-    const humans = guild.members.cache.filter(m => !m.user.bot);
-    totalCount = humans.size;
     maleCount = roles.male ? (guild.roles.cache.get(roles.male)?.members.size || 0) : 0;
     femaleCount = roles.female ? (guild.roles.cache.get(roles.female)?.members.size || 0) : 0;
   }
