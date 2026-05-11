@@ -513,7 +513,6 @@ async function createDynamicVC(guild, member, name, limit, g) {
       parent: g.dynamicVC?.cleanupCategoryId,
       userLimit: limit,
       permissionOverwrites: [
-        { id: guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
         { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }
       ]
     });
@@ -1240,7 +1239,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     const limit = slot.limit ?? 0;
     const name = slot.name.replace("{user}", n.member.displayName);
     try {
-      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId || n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: n.guild.roles.everyone.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }, { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
+      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId || n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
       tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id);
       await n.member.voice.setChannel(vc);
       await sendOrUpdateControlPanel(vc);
