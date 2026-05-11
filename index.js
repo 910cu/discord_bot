@@ -680,7 +680,7 @@ client.on(Events.InteractionCreate, async (i) => {
           { name: `♀ 女性 (${females.size || 0}人)`, value: listNames(females) },
           { name: `👤 その他 (${others.size || 0}人)`, value: listNames(others) }
         )
-        .setFooter({ text: `合計 (ボット除外): 約${humans.size}人 / サーバー全体: ${i.guild.memberCount}人` })
+        .setFooter({ text: `ロール合計 (♂+♀): ${males.size + females.size}人 / サーバー全体: ${i.guild.memberCount}人` })
         .setTimestamp();
       return i.editReply({ embeds: [embed] });
     }
@@ -1456,8 +1456,9 @@ async function updateMemberCountChannels(guild) {
   }
 
   // 1チャンネルに横並びで表示
+  const totalSum = maleCount + femaleCount;
   const fmt = dynamicVC.memberCountFormat || "♂ {male}人・♀ {female}人・👤 {total}人";
-  const name = fmt.replace("{male}", maleCount).replace("{female}", femaleCount).replace("{total}", totalCount);
+  const name = fmt.replace("{male}", maleCount).replace("{female}", femaleCount).replace("{total}", totalSum);
   try {
     const ch = await guild.channels.fetch(chId).catch(() => null);
     if (!ch) return;
