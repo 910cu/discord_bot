@@ -318,7 +318,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
         extraBtn: createBtn("cfg_trigger_add_slot", "➕ スロット追加", ButtonStyle.Primary),
         back: "ch_features"
       },
-      intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), extraBtn3: createBtn("cfg_intro_list", "📋 承認済みリスト", ButtonStyle.Secondary), selects: [{ id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, { id: "select_cfg_intro_add", ph: "👤 手動で承認ユーザーを追加", user: true, multi: true }], back: "ch_features" },
+      intro_kick: { title: "🛂 入国審査 (自動整理) 設定", desc: `- 🛂 提出確認: ${dynamicVC.introCheckChannelId ? `<#${dynamicVC.introCheckChannelId}>` : "`未設定`"}\n- ⚠️ 警告: ${dynamicVC.introWarnMinutes || 2880}分後\n- 🚪 キック: ${dynamicVC.introKickMinutes || 4320}分後\n\n参加後に自己紹介を記入しなかったユーザーを自動的にサーバーから退場させます。`, feature: "introKickEnabled", toggle: "toggle_intro_kick", label: "入国審査", extraBtn: createBtn("config_intro_time", "⏱️ 期限設定", ButtonStyle.Primary), extraBtn2: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), extraBtn3: createBtn("cfg_intro_list", "📋 承認済みリスト", ButtonStyle.Secondary), extraBtn4: createBtn("cfg_intro_sync_all", "👥 全員を承認", ButtonStyle.Danger), selects: [{ id: "select_cfg_introcheck", ph: "🛂 提出確認先を選択", type: [ChannelType.GuildText] }, { id: "select_cfg_intro_add", ph: "👤 手動で承認ユーザーを追加", user: true, multi: true }], back: "ch_features" },
       intro_display: { title: "🖼️ VC内自己紹介表示 設定", desc: `- 📋 ソース: ${dynamicVC.introSourceChannelIds?.length > 0 ? dynamicVC.introSourceChannelIds.map(id => `<#${id}>`).join(", ") : (dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥")}\n\nVCに入室したユーザーの自己紹介を自動的にテキストチャンネルへ表示します。`, feature: "vcIntroDisplayEnabled", toggle: "toggle_vc_intro", label: "VC内表示", extraBtn: createBtn("cfg_intro_restore", "🔄 チャンネルから復元", ButtonStyle.Secondary), select: { id: "select_cfg_introsource", ph: "📋 ソースを選択 (複数可)", type: [ChannelType.GuildText], multi: true }, back: "vc_features" },
       vc: {
         title: "🚻 部屋制限 設定", desc: `- ♂️ 男性ロール: ${roles.male ? `<@&${roles.male}>` : "`未設定`"}\n- ♀️ 女性ロール: ${roles.female ? `<@&${roles.female}>` : "`未設定`"}\n\nVCオーナーが部屋のロックや性別制限を行えるようにします。`, feature: "genderRoleEnabled", toggle: "toggle_gender", label: "部屋制限",
@@ -350,6 +350,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
     if (configs.extraBtn) row1Btns.push(configs.extraBtn.setDisabled(!isEnabled));
     if (configs.extraBtn2) row1Btns.push(configs.extraBtn2.setDisabled(!isEnabled));
     if (configs.extraBtn3) row1Btns.push(configs.extraBtn3); // 常に有効化
+    if (configs.extraBtn4) row1Btns.push(configs.extraBtn4); // 常に有効化
     components.push(createRow(row1Btns));
 
     // triggerの場合はスロット一覧ボタンを追加
@@ -811,6 +812,23 @@ client.on(Events.InteractionCreate, async (i) => {
       if (list.length === 0) return i.reply({ content: "承認済みのユーザーはいません。", ephemeral: true });
       const desc = list.map(u => `- <@${u.userId}> (\`${u.userId}\`)`).join("\n");
       return i.reply({ content: `### 📋 承認済みユーザー (最新100件)\n${desc.length > 1900 ? desc.substring(0, 1900) + "\n...その他" : desc}`, ephemeral: true });
+    }
+    if (cid === "cfg_intro_sync_all") {
+      await i.deferReply({ ephemeral: true });
+      const members = await i.guild.members.fetch();
+      const ops = [];
+      for (const m of members.values()) {
+        if (m.user.bot) continue;
+        ops.push({
+          updateOne: {
+            filter: { guildId: gid, userId: m.id },
+            update: { $set: { introduced: true } },
+            upsert: true
+          }
+        });
+      }
+      if (ops.length > 0) await Intro.bulkWrite(ops);
+      return i.editReply({ content: `✅ 現在サーバーにいる全ユーザー (${ops.length}名) を承認済みリストに追加しました。` });
     }
     if (cid === "cfg_btn_auto_delete") return i.showModal(new ModalBuilder().setCustomId("auto_delete_modal").setTitle("削除タイマー設定").addComponents(createRow([new TextInputBuilder().setCustomId("minutes").setLabel("空室削除までの時間 (分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.autoDeleteMinutes || 5)).setRequired(true)])));
     if (cid === "cfg_btn_tts_voice") {
