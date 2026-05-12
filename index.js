@@ -79,6 +79,11 @@ for (const cmd of allCommands) {
   client.commands.set(cmd.data.name, cmd);
 }
 
+// レート制限などのエラーでプロセスが終了しないようにハンドリング
+client.on(Events.Error, err => console.error("❌ Discord Client Error:", err));
+process.on("unhandledRejection", err => console.error("❌ Unhandled Rejection:", err));
+process.on("uncaughtException", err => console.error("❌ Uncaught Exception:", err));
+
 const defaultMessages = {
   "introNotify": "✅ <@{user}> さんの自己紹介を確認しました！",
   "limitLockedWarning": "⚠️ この部屋は作成時に人数が固定されているため、変更できません。",
@@ -1396,11 +1401,16 @@ async function syncIntroHistory(gid) {
   if (checkChId) await scan(checkChId, false);
   for (const sid of sourceChIds) await scan(sid, true);
 
-  // ロール保持者を承認済みとして同期
-  const members = await guild.members.fetch();
-  for (const m of members.values()) {
-    if (m.roles.cache.has(g.roles.male) || m.roles.cache.has(g.roles.female)) {
-      await Intro.findOneAndUpdate({ guildId: gid, userId: m.id }, { $set: { introduced: true } }, { upsert: true });
+  // ロール保持者を承認済みとして同期 (必要なロールを持つメンバーのみフェッチして軽量化)
+  const roleIds = [g.roles?.male, g.roles?.female].filter(Boolean);
+  if (roleIds.length > 0) {
+    try {
+      const members = await guild.members.fetch({ role: roleIds });
+      for (const m of members.values()) {
+        await Intro.findOneAndUpdate({ guildId: gid, userId: m.id }, { $set: { introduced: true } }, { upsert: true });
+      }
+    } catch (e) {
+      console.error(`[SyncIntro] メンバー取得エラー (Guild: ${gid}): ${e.message}`);
     }
   }
 
@@ -1592,9 +1602,9 @@ client.once(Events.ClientReady, async () => {
     await setupCreatePanel(gid);
     await syncIntroHistory(gid);
     await updateMemberCountChannels(guild);
-
-    // サーバー間の処理に少し間隔を置く (レートリミット対策)
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // サーバー間の処理に少し間隔を置く (起動時のバーストによるレートリミット対策)
+    await new Promise(resolve => setTimeout(resolve, 3000));
     if (fs.existsSync("./introDB.json")) {
       try {
         const localIntro = JSON.parse(fs.readFileSync("./introDB.json", "utf-8"));
@@ -1615,7 +1625,7 @@ client.once(Events.ClientReady, async () => {
             }
           }
         }
-        if (migratedCount > 0) console.log(`📦 Guild ${gid}: ${migratedCount} 件の自己紹介データを移行しました。`);
+        if (migratedCount > 0) console.log(`📦 Guild ${gid}: ${migratedCount} 件 of 自己紹介データを移行しました。`);
       } catch (err) { console.error("❌ 自己紹介データ移行エラー:", err); }
     }
 
@@ -1629,13 +1639,14 @@ client.once(Events.ClientReady, async () => {
         const checkCh = guild.channels.cache.get(checkChId);
         if (!checkCh) return;
 
-        const members = await guild.members.fetch();
+        // 全メンバーフェッチはレート制限の原因になるため、キャッシュを使用
+        const members = guild.members.cache;
         const now = Date.now();
         for (const m of members.values()) {
           if (m.user.bot || !m.joinedTimestamp) continue;
 
           // ロールをすでに持っている場合は承認済み扱い
-          if (m.roles.cache.has(gCurrent.roles.male) || m.roles.cache.has(gCurrent.roles.female)) {
+          if (m.roles.cache.has(gCurrent.roles?.male) || m.roles.cache.has(gCurrent.roles?.female)) {
             await Intro.findOneAndUpdate({ guildId: guild.id, userId: m.id }, { $set: { introduced: true } }, { upsert: true });
             continue;
           }
@@ -1661,7 +1672,7 @@ client.once(Events.ClientReady, async () => {
           }
         }
       } catch (err) { console.error(`[IntroKick] Error in ${guild.id}:`, err); }
-    }, 30000); // 30秒ごとにチェック
+    }, 60000); // 60秒ごとにチェック (負荷軽減)
   }
 });
 
