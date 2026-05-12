@@ -449,7 +449,13 @@ async function buildPanelPayload(vc) {
   const isTTS = ttsPlayers.has(vc.id);
   const ttsState = ttsPlayers.get(vc.id);
   const speakerLabel = getSpeakerName(ttsState?.activeSpeakerId || g.dynamicVC.ttsSpeakerId || "3");
-  const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setTitle("🎙️ VC Control Interface").setDescription(`**部屋主** : <@${ownerId}>\n\n**現在の設定**\n- 状態: ${locked ? "🔒 ロック中" : "🔓 公開中"}\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 " + speakerLabel : "🔴 停止中"}\``);
+
+  let desc = `**部屋主** : <@${ownerId}>`;
+  if (locked) {
+    desc += `\n- 状態: 🔒 ロック中\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 " + speakerLabel : "🔴 停止中"}\``;
+  }
+  const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setDescription(desc);
+
   const ttsBtn = createBtn(`vc_tts_toggle_${vc.id}`, isTTS ? "🔇 読上停止" : "🗣️ 読上開始", isTTS ? ButtonStyle.Danger : ButtonStyle.Primary);
 
   if (isFixed) {
@@ -474,10 +480,29 @@ async function buildVCSettingsPayload(vc) {
   return { embeds: [embed], components: [createRow([createBtn("label_g", "【性別】", ButtonStyle.Secondary, true), createBtn("vc_gender_none", "なし", gStyle(null), !g.features.genderRoleEnabled), createBtn("vc_gender_male", "♂️ 男性", gStyle("male"), !g.features.genderRoleEnabled), createBtn("vc_gender_female", "♀️ 女性", gStyle("female"), !g.features.genderRoleEnabled)]), createRow([createBtn("label_l", "【人数】", ButtonStyle.Secondary, true), createBtn("vc_limit_0", "∞", lStyle(0)), createBtn("vc_limit_4", "4人", lStyle(4)), createBtn("vc_limit_5", "5人", lStyle(5)), createBtn("vc_limit_custom", "指定...", ButtonStyle.Primary)]), createRow([createBtn("vc_main_panel", "⬅️ 戻る")])] };
 }
 
-async function sendOrUpdateControlPanel(vc) {
+async function sendOrUpdateControlPanel(vc, ensureBottom = false) {
   const oldId = controlPanelMsgIds.get(vc.id), payload = await buildPanelPayload(vc);
-  if (oldId) try { await (await vc.messages.fetch(oldId)).edit(payload); return; } catch { }
-  try { const s = await vc.send({ ...payload, flags: [MessageFlags.SuppressNotifications] }); controlPanelMsgIds.set(vc.id, s.id); } catch { }
+  if (oldId) {
+    try {
+      const msg = await vc.messages.fetch(oldId);
+      const lastMsgs = await vc.messages.fetch({ limit: 1 });
+      const isLast = lastMsgs.first()?.id === oldId;
+      if (isLast) {
+        await msg.edit(payload);
+        return;
+      }
+      if (ensureBottom) {
+        await msg.delete().catch(() => { });
+      } else {
+        await msg.edit(payload);
+        return;
+      }
+    } catch { }
+  }
+  try {
+    const s = await vc.send({ ...payload, flags: [MessageFlags.SuppressNotifications] });
+    controlPanelMsgIds.set(vc.id, s.id);
+  } catch { }
 }
 
 async function updateVcName(vc, newName) {
@@ -556,6 +581,10 @@ client.on(Events.MessageCreate, async (m) => {
         await playTTS(state, text, speakerId);
       }
     }
+    // 常に最後に表示させるための再配置
+    if (tempChannels.has(m.channel.id)) {
+      await sendOrUpdateControlPanel(m.channel, true);
+    }
   }
 });
 
@@ -600,10 +629,24 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid === "vc_toggle_lock") {
       const vc = i.member.voice.channel; if (!vc || !tempChannels.has(vc.id) || vcOwners.get(vc.id) !== i.user.id) return i.deferUpdate();
       lockedVCs.has(vc.id) ? lockedVCs.delete(vc.id) : lockedVCs.add(vc.id);
-      return i.update(await buildPanelPayload(vc));
+      await i.deferUpdate();
+      return sendOrUpdateControlPanel(vc, true);
     }
-    if (cid === "vc_settings_btn") { const vc = i.member.voice.channel; if (vc && tempChannels.has(vc.id) && vcOwners.get(vc.id) === i.user.id && g.features.genderRoleEnabled) return i.update(await buildVCSettingsPayload(vc)); return i.deferUpdate(); }
-    if (cid === "vc_main_panel") { const vc = i.member.voice.channel; if (vc && tempChannels.has(vc.id)) return i.update(await buildPanelPayload(vc)); return i.deferUpdate(); }
+    if (cid === "vc_settings_btn") {
+      const vc = i.member.voice.channel;
+      if (vc && tempChannels.has(vc.id) && vcOwners.get(vc.id) === i.user.id && g.features.genderRoleEnabled) {
+        return i.update(await buildVCSettingsPayload(vc));
+      }
+      return i.deferUpdate();
+    }
+    if (cid === "vc_main_panel") {
+      const vc = i.member.voice.channel;
+      if (vc && tempChannels.has(vc.id)) {
+        await i.deferUpdate();
+        return sendOrUpdateControlPanel(vc, true);
+      }
+      return i.deferUpdate();
+    }
     if (cid.startsWith("vc_gender_")) {
       const vc = i.member.voice.channel; if (!vc || vcOwners.get(vc.id) !== i.user.id) return i.deferUpdate();
       const mode = cid.split("_")[2]; if (mode === "none") genderMode.delete(vc.id); else genderMode.set(vc.id, mode);
@@ -615,7 +658,9 @@ client.on(Events.InteractionCreate, async (i) => {
     if (cid.startsWith("vc_limit_") && cid !== "vc_limit_custom") {
       const vc = i.member.voice.channel; if (!vc || vcOwners.get(vc.id) !== i.user.id) return i.deferUpdate();
       if (limitLockedVCs.has(vc.id)) return i.reply({ content: g.messages.limitLockedWarning, ephemeral: true });
-      await vc.setUserLimit(parseInt(cid.split("_")[2])); return i.update(await buildVCSettingsPayload(vc));
+      await vc.setUserLimit(parseInt(cid.split("_")[2]));
+      await i.deferUpdate();
+      return sendOrUpdateControlPanel(vc, true);
     }
     if (cid === "vc_limit_custom") {
       const vc = i.member.voice.channel; if (!vc || vcOwners.get(vc.id) !== i.user.id) return i.deferUpdate();
@@ -1288,10 +1333,13 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
             } else {
               msg = await vc.send({ embeds: [embed], flags: [MessageFlags.SuppressNotifications] });
             }
+            // 自己紹介表示のあとにパネルを再配置
+            await sendOrUpdateControlPanel(vc, true);
           } catch (e) {
             const cleanName = m.displayName.replace(/<a?:.+?:\d+>|\p{Extended_Pictographic}/gu, "").replace(/[\u200B-\u200D\uFE0F]/g, "").trim() || m.displayName;
             const cleanContent = bio.content.replace(/<a?:.+?:\d+>|\p{Extended_Pictographic}/gu, "").replace(/[\u200B-\u200D\uFE0F]/g, "").trim();
             msg = await vc.send({ embeds: [new EmbedBuilder().setColor(0x5865f2).setThumbnail(m.displayAvatarURL() || m.user.displayAvatarURL()).setDescription(`### ${cleanName}\n\n${cleanContent}`)], flags: [MessageFlags.SuppressNotifications] }).catch(() => null);
+            await sendOrUpdateControlPanel(vc, true);
           }
           if (msg) introMsgIds.set(`${vc.id}_${m.id}`, msg.id);
         }
@@ -1301,8 +1349,8 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
     const realMembers = ch?.members.filter(m => !m.user.bot);
-    if (realMembers?.size === 0) { try { await ch.delete();[tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); } catch { } }
-    else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = realMembers.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch); } }
+    if (realMembers?.size === 0) { try { await ch.delete(); [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); } catch { } }
+    else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = realMembers.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch, true); } }
   }
 });
 
