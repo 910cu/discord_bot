@@ -400,7 +400,8 @@ function buildTriggerDesc(dynamicVC, guild) {
     slots.forEach((s, idx) => {
       const chMention = s.triggerChannelId ? `<#${s.triggerChannelId}>` : "`未設定`";
       const limitLabel = s.limit === 0 ? "∞" : `${s.limit}人`;
-      desc += `**[${idx + 1}]** \`${s.name}\` (${limitLabel}) ─ ${chMention}\n`;
+      const fixedLabel = s.isFixed ? " (簡易)" : "";
+      desc += `**[${idx + 1}]** \`${s.name}\` (${limitLabel})${fixedLabel} ─ ${chMention}\n`;
     });
   }
   desc += "\n特定のチャンネルに入室した際、自動で新しいVCを作成します。";
@@ -934,7 +935,8 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.showModal(new ModalBuilder().setCustomId("trigger_slot_add_modal").setTitle("VCスロット追加").addComponents(
         createRow([new TextInputBuilder().setCustomId("slot_name").setLabel("部屋名 ({user}使用可)").setStyle(TextInputStyle.Short).setValue("{user}のVC").setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_limit").setLabel("人数上限 (0=無制限)").setStyle(TextInputStyle.Short).setValue("0").setRequired(true)]),
-        createRow([new TextInputBuilder().setCustomId("slot_trigger").setLabel("トリガーチャンネルID").setStyle(TextInputStyle.Short).setPlaceholder("VCチャンネルのIDを入力").setRequired(false)])
+        createRow([new TextInputBuilder().setCustomId("slot_trigger").setLabel("トリガーチャンネルID").setStyle(TextInputStyle.Short).setPlaceholder("VCチャンネルのIDを入力").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("slot_fixed").setLabel("簡易パネル (yes/no): 名前変更等の制限").setStyle(TextInputStyle.Short).setValue("no").setRequired(true)])
       ));
     }
     // スロット編集ボタン (cfg_trigger_slot_{idx})
@@ -947,6 +949,7 @@ client.on(Events.InteractionCreate, async (i) => {
         createRow([new TextInputBuilder().setCustomId("slot_name").setLabel("部屋名 ({user}使用可)").setStyle(TextInputStyle.Short).setValue(slot.name || "{user}のVC").setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_limit").setLabel("人数上限 (0=無制限)").setStyle(TextInputStyle.Short).setValue(String(slot.limit ?? 0)).setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_trigger").setLabel("トリガーチャンネルID").setStyle(TextInputStyle.Short).setValue(slot.triggerChannelId || "").setPlaceholder("VCチャンネルのIDを入力 (空白で削除)").setRequired(false)]),
+        createRow([new TextInputBuilder().setCustomId("slot_fixed").setLabel("簡易パネル (yes/no): 名前変更等の制限").setStyle(TextInputStyle.Short).setValue(slot.isFixed ? "yes" : "no").setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_delete").setLabel("削除する場合は \"delete\" と入力").setStyle(TextInputStyle.Short).setPlaceholder("削除しない場合は空白のままで").setRequired(false)])
       ));
     }
@@ -1069,8 +1072,9 @@ client.on(Events.InteractionCreate, async (i) => {
       const slotName = i.fields.getTextInputValue("slot_name").trim();
       const slotLimit = parseInt(i.fields.getTextInputValue("slot_limit")) || 0;
       const slotTrigger = i.fields.getTextInputValue("slot_trigger").trim() || null;
+      const isFixed = ["yes", "y", "true", "1", "はい"].includes(i.fields.getTextInputValue("slot_fixed").trim().toLowerCase());
       const slots = [...(g.dynamicVC.vcSlots || [])];
-      slots.push({ name: slotName, limit: slotLimit, triggerChannelId: slotTrigger });
+      slots.push({ name: slotName, limit: slotLimit, triggerChannelId: slotTrigger, isFixed });
       await updateGuildConfig(gid, { $set: { "dynamicVC.vcSlots": slots } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
@@ -1090,7 +1094,8 @@ client.on(Events.InteractionCreate, async (i) => {
       const slotName = i.fields.getTextInputValue("slot_name").trim();
       const slotLimit = parseInt(i.fields.getTextInputValue("slot_limit")) || 0;
       const slotTrigger = i.fields.getTextInputValue("slot_trigger").trim() || null;
-      slots[idx] = { name: slotName, limit: slotLimit, triggerChannelId: slotTrigger };
+      const isFixed = ["yes", "y", "true", "1", "はい"].includes(i.fields.getTextInputValue("slot_fixed").trim().toLowerCase());
+      slots[idx] = { name: slotName, limit: slotLimit, triggerChannelId: slotTrigger, isFixed };
       await updateGuildConfig(gid, { $set: { "dynamicVC.vcSlots": slots } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
@@ -1308,7 +1313,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     const name = slot.name.replace("{user}", n.member.displayName);
     try {
       const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId || n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
-      tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit) limitLockedVCs.add(vc.id);
+      tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit || slot.isFixed) limitLockedVCs.add(vc.id);
       await n.member.voice.setChannel(vc);
       await sendOrUpdateControlPanel(vc);
       const delMin = g.dynamicVC.autoDeleteMinutes || 5;
