@@ -93,7 +93,7 @@ const defaultMessages = {
   "introKickDM": "サーバー参加後、指定された期間内に自己紹介の記入がなかったため、サーバーから自動退出となりました。"
 };
 
-const tempChannels = new Set(), controlPanelMsgIds = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), renameTimestamps = new Map();
+const tempChannels = new Set(), controlPanelMsgIds = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), privateVCs = new Set(), renameTimestamps = new Map();
 const guildCache = new Map();
 const recruitSelections = new Map();
 const ttsPlayers = new Map();
@@ -400,8 +400,10 @@ function buildTriggerDesc(dynamicVC, guild) {
     slots.forEach((s, idx) => {
       const chMention = s.triggerChannelId ? `<#${s.triggerChannelId}>` : "`未設定`";
       const limitLabel = s.limit === 0 ? "∞" : `${s.limit}人`;
-      const fixedLabel = s.isFixed ? " (簡易)" : "";
-      desc += `**[${idx + 1}]** \`${s.name}\` (${limitLabel})${fixedLabel} ─ ${chMention}\n`;
+      let typeLabel = "";
+      if (s.isPrivate) typeLabel = " (非公開)";
+      else if (s.isFixed) typeLabel = " (簡易)";
+      desc += `**[${idx + 1}]** \`${s.name}\` (${limitLabel})${typeLabel} ─ ${chMention}\n`;
     });
   }
   desc += "\n特定のチャンネルに入室した際、自動で新しいVCを作成します。";
@@ -453,6 +455,7 @@ async function setupCreatePanel(gid) {
 async function buildPanelPayload(vc) {
   const g = await getGuildConfig(vc.guildId);
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, limit = vc.userLimit ?? 0, ownerId = vcOwners.get(vc.id), isFixed = limitLockedVCs.has(vc.id);
+  const isPrivate = privateVCs.has(vc.id);
   const isTTS = ttsPlayers.has(vc.id);
   const ttsState = ttsPlayers.get(vc.id);
   const speakerLabel = getSpeakerName(ttsState?.activeSpeakerId || g.dynamicVC.ttsSpeakerId || "3");
@@ -468,6 +471,7 @@ async function buildPanelPayload(vc) {
   if (isFixed) {
     const row = createRow([createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled), ttsBtn]);
     if (g.features.recruitEnabled) row.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
+    if (isPrivate) row.addComponents(createBtn(`vc_invite_btn_${vc.id}`, "➕ メンバー招待", ButtonStyle.Primary));
     return { embeds: [embed], components: [row] };
   }
   const row1 = createRow([createBtn("vc_rename", "✏️ 名前変更"), createBtn("vc_toggle_lock", locked ? "🔓 解除" : "🔒 ロック", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 制限設定", ButtonStyle.Secondary, !g.features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled)]);
@@ -524,7 +528,7 @@ async function checkAndCleanupVC(vcId) {
   if (vc && vc.members.size === 0) {
     try {
       await vc.delete();
-      [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs].forEach(s => s.delete(vcId));
+      [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, privateVCs].forEach(s => s.delete(vcId));
     } catch (e) { }
   }
 }
@@ -616,6 +620,18 @@ client.on(Events.InteractionCreate, async (i) => {
 
   if (i.isButton()) {
     const cid = i.customId;
+    if (cid.startsWith("vc_invite_btn_")) {
+      const vcId = cid.replace("vc_invite_btn_", "");
+      const vc = i.guild.channels.cache.get(vcId);
+      if (!vc || vcOwners.get(vcId) !== i.user.id) {
+        return i.reply({ content: "⚠️ あなたがこの部屋の部屋主である必要があります。", ephemeral: true });
+      }
+      return i.reply({
+        content: "📥 招待したいメンバーを以下のメニューから選択してください（複数選択可）：",
+        components: [createRow([new UserSelectMenuBuilder().setCustomId(`vc_invite_select_${vc.id}`).setPlaceholder("招待するメンバーを選択").setMaxValues(10)])],
+        ephemeral: true
+      });
+    }
     if (cid.startsWith("create_vc_")) {
       if (!g.features.vcPanelEnabled) return i.reply({ content: "無効です", ephemeral: true });
       const limit = cid === "create_vc_4" ? 4 : cid === "create_vc_5" ? 5 : 0;
@@ -936,7 +952,7 @@ client.on(Events.InteractionCreate, async (i) => {
         createRow([new TextInputBuilder().setCustomId("slot_name").setLabel("部屋名 ({user}使用可)").setStyle(TextInputStyle.Short).setValue("{user}のVC").setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_limit").setLabel("人数上限 (0=無制限)").setStyle(TextInputStyle.Short).setValue("0").setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_trigger").setLabel("トリガーチャンネルID").setStyle(TextInputStyle.Short).setPlaceholder("VCチャンネルのIDを入力").setRequired(false)]),
-        createRow([new TextInputBuilder().setCustomId("slot_fixed").setLabel("簡易パネル (yes/no): 名前変更等の制限").setStyle(TextInputStyle.Short).setValue("no").setRequired(true)])
+        createRow([new TextInputBuilder().setCustomId("slot_type").setLabel("タイプ (0=標準, 1=簡易, 2=非公開)").setStyle(TextInputStyle.Short).setValue("0").setRequired(true)])
       ));
     }
     // スロット編集ボタン (cfg_trigger_slot_{idx})
@@ -945,11 +961,14 @@ client.on(Events.InteractionCreate, async (i) => {
       const slots = g.dynamicVC.vcSlots || [];
       const slot = slots[idx];
       if (!slot) return i.reply({ content: "❌ スロットが見つかりません。", ephemeral: true });
+      let currentType = "0";
+      if (slot.isPrivate) currentType = "2";
+      else if (slot.isFixed) currentType = "1";
       return i.showModal(new ModalBuilder().setCustomId(`trigger_slot_edit_modal_${idx}`).setTitle(`スロット[${idx + 1}]編集`).addComponents(
         createRow([new TextInputBuilder().setCustomId("slot_name").setLabel("部屋名 ({user}使用可)").setStyle(TextInputStyle.Short).setValue(slot.name || "{user}のVC").setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_limit").setLabel("人数上限 (0=無制限)").setStyle(TextInputStyle.Short).setValue(String(slot.limit ?? 0)).setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_trigger").setLabel("トリガーチャンネルID").setStyle(TextInputStyle.Short).setValue(slot.triggerChannelId || "").setPlaceholder("VCチャンネルのIDを入力 (空白で削除)").setRequired(false)]),
-        createRow([new TextInputBuilder().setCustomId("slot_fixed").setLabel("簡易パネル (yes/no): 名前変更等の制限").setStyle(TextInputStyle.Short).setValue(slot.isFixed ? "yes" : "no").setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("slot_type").setLabel("タイプ (0=標準, 1=簡易, 2=非公開)").setStyle(TextInputStyle.Short).setValue(currentType).setRequired(true)]),
         createRow([new TextInputBuilder().setCustomId("slot_delete").setLabel("削除する場合は \"delete\" と入力").setStyle(TextInputStyle.Short).setPlaceholder("削除しない場合は空白のままで").setRequired(false)])
       ));
     }
@@ -1072,9 +1091,11 @@ client.on(Events.InteractionCreate, async (i) => {
       const slotName = i.fields.getTextInputValue("slot_name").trim();
       const slotLimit = parseInt(i.fields.getTextInputValue("slot_limit")) || 0;
       const slotTrigger = i.fields.getTextInputValue("slot_trigger").trim() || null;
-      const isFixed = ["yes", "y", "true", "1", "はい"].includes(i.fields.getTextInputValue("slot_fixed").trim().toLowerCase());
+      const typeVal = parseInt(i.fields.getTextInputValue("slot_type")) || 0;
+      const isFixed = (typeVal === 1 || typeVal === 2);
+      const isPrivate = (typeVal === 2);
       const slots = [...(g.dynamicVC.vcSlots || [])];
-      slots.push({ name: slotName, limit: slotLimit, triggerChannelId: slotTrigger, isFixed });
+      slots.push({ name: slotName, limit: slotLimit, triggerChannelId: slotTrigger, isFixed, isPrivate });
       await updateGuildConfig(gid, { $set: { "dynamicVC.vcSlots": slots } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
@@ -1094,8 +1115,10 @@ client.on(Events.InteractionCreate, async (i) => {
       const slotName = i.fields.getTextInputValue("slot_name").trim();
       const slotLimit = parseInt(i.fields.getTextInputValue("slot_limit")) || 0;
       const slotTrigger = i.fields.getTextInputValue("slot_trigger").trim() || null;
-      const isFixed = ["yes", "y", "true", "1", "はい"].includes(i.fields.getTextInputValue("slot_fixed").trim().toLowerCase());
-      slots[idx] = { name: slotName, limit: slotLimit, triggerChannelId: slotTrigger, isFixed };
+      const typeVal = parseInt(i.fields.getTextInputValue("slot_type")) || 0;
+      const isFixed = (typeVal === 1 || typeVal === 2);
+      const isPrivate = (typeVal === 2);
+      slots[idx] = { name: slotName, limit: slotLimit, triggerChannelId: slotTrigger, isFixed, isPrivate };
       await updateGuildConfig(gid, { $set: { "dynamicVC.vcSlots": slots } });
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "trigger", updatedG));
@@ -1242,6 +1265,33 @@ client.on(Events.InteractionCreate, async (i) => {
       ));
     }
 
+    if (i.customId.startsWith("vc_invite_select_")) {
+      const vcId = i.customId.replace("vc_invite_select_", "");
+      const vc = i.guild.channels.cache.get(vcId);
+      if (!vc) return i.reply({ content: "❌ ボイスチャンネルが見つかりませんでした。", ephemeral: true });
+      if (vcOwners.get(vc.id) !== i.user.id) return i.reply({ content: "❌ 部屋主のみが招待できます。", ephemeral: true });
+
+      const userIds = i.values;
+      if (userIds.length === 0) return i.reply({ content: "⚠️ メンバーが選択されていません。", ephemeral: true });
+
+      await i.deferReply({ ephemeral: true });
+
+      const invitedMentions = [];
+      for (const uid of userIds) {
+        await vc.permissionOverwrites.create(uid, {
+          ViewChannel: true,
+          Connect: true
+        }).catch(console.error);
+        invitedMentions.push(`<@${uid}>`);
+      }
+
+      await vc.send({
+        content: `✨ ${invitedMentions.join(" ")} さんが <@${i.user.id}> にこの相談部屋へ招待されました！`
+      }).catch(console.error);
+
+      return i.editReply({ content: `✅ ${userIds.length} 名のメンバーを招待し、権限を付与しました！` });
+    }
+
     if (i.customId.startsWith("vc_afk_select_")) {
       const targetUid = i.values[0];
       const member = await i.guild.members.fetch(targetUid).catch(() => null);
@@ -1312,8 +1362,18 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
     const limit = slot.limit ?? 0;
     const name = slot.name.replace("{user}", n.member.displayName);
     try {
-      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId || n.channel.parentId, userLimit: limit, permissionOverwrites: [{ id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }] });
-      tempChannels.add(vc.id); vcOwners.set(vc.id, n.member.id); if (limit || slot.isFixed) limitLockedVCs.add(vc.id);
+      const overwrites = [{ id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ManageWebhooks, PermissionFlagsBits.Connect, PermissionFlagsBits.MoveMembers] }];
+      if (slot.isPrivate) {
+        overwrites.push(
+          { id: n.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] },
+          { id: n.member.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect] }
+        );
+      }
+      const vc = await n.guild.channels.create({ name, type: ChannelType.GuildVoice, parent: g.dynamicVC?.cleanupCategoryId || n.channel.parentId, userLimit: limit, permissionOverwrites: overwrites });
+      tempChannels.add(vc.id);
+      vcOwners.set(vc.id, n.member.id);
+      if (limit || slot.isFixed) limitLockedVCs.add(vc.id);
+      if (slot.isPrivate) privateVCs.add(vc.id);
       await n.member.voice.setChannel(vc);
       await sendOrUpdateControlPanel(vc);
       const delMin = g.dynamicVC.autoDeleteMinutes || 5;
@@ -1377,7 +1437,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
     const realMembers = ch?.members.filter(m => !m.user.bot);
-    if (realMembers?.size === 0) { try { await ch.delete(); [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); } catch { } }
+    if (realMembers?.size === 0) { try { await ch.delete(); [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections, privateVCs].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); } catch { } }
     else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = realMembers.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch, true); } }
   }
 });
