@@ -250,33 +250,17 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("cfg_btn_member_count", "👥 人数カウンター", ButtonStyle.Secondary), createBtn("cfg_btn_msg_relay", "📨 メッセージ転送", ButtonStyle.Secondary), createBtn("cfg_btn_auto_delete", "⏱️ 削除設定", ButtonStyle.Secondary)]),
       createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
-  } else if (type === "tts_bots") {
-    const ttsBots = dynamicVC.ttsBots || [];
-    let subDesc = "### 🤖 読上BOT管理\nVCに呼び出せる外部読み上げBOTを登録・管理します。\n\n";
-    if (ttsBots.length === 0) {
-      subDesc += "⚠️ 現在登録されているBOTはありません。\n「➕ 新規登録」から追加してください。";
-    } else {
-      ttsBots.forEach((bot, index) => {
-        subDesc += `**${index + 1}. ${bot.name}**\n- BOT ID: \`${bot.botId}\`\n- コマンド: \`${bot.invokeCommand}\`\n\n`;
-      });
-    }
-    embed.setTitle(null).setDescription(subDesc);
-    components = [
-      createRow([createBtn("cfg_tts_bot_add", "➕ 新規登録", ButtonStyle.Success), createBtn("cfg_tts_bot_delete", "🗑️ 登録削除", ButtonStyle.Danger, ttsBots.length === 0)]),
-      createRow([createBtn("cfg_btn_vc_features", "⬅️ 戻る")])
-    ];
+
   } else if (type === "vc_features") {
     const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
     let subDesc = "### 🎙️ VC内機能設定\n各機能の詳細設定や有効化・無効化が行えます。\n\n";
     subDesc += `**💤 AFK (寝落ち)** [ ${fStatus("afkEnabled")} ]\n┕ 移動先: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**🖼️ 自己紹介表示** [ ${fStatus("vcIntroDisplayEnabled")} ]\n┕ ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**🚻 部屋制限** [ ${fStatus("genderRoleEnabled")} ]\n┕ ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定` 🟥"}\n┕ ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定` 🟥"}\n\n`;
-    const botsCount = (dynamicVC.ttsBots || []).length;
-    subDesc += `**🤖 読上BOT**: \`${botsCount}件登録済み\`\n`;
     embed.setTitle(null).setDescription(subDesc);
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled")), createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled"))]),
-      createRow([createBtn("cfg_btn_recruit", "📢 募集機能", bStyle("recruitEnabled")), createBtn("cfg_btn_tts_bots", "🤖 読上BOT管理", ButtonStyle.Secondary), createBtn("cfg_back_main", "⬅️ 戻る")])
+      createRow([createBtn("cfg_btn_recruit", "📢 募集機能", bStyle("recruitEnabled")), createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else {
     const configs = {
@@ -422,27 +406,14 @@ async function buildPanelPayload(vc) {
   const g = await getGuildConfig(vc.guildId);
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, limit = vc.userLimit ?? 0, ownerId = vcOwners.get(vc.id), isFixed = limitLockedVCs.has(vc.id);
   const isPrivate = privateVCs.has(vc.id);
-  // 登録されている読み上げBOTが現在のVCにいるかチェック
-  const ttsBots = g.dynamicVC.ttsBots || [];
-  let inVcBot = null;
-  for (const bot of ttsBots) {
-    if (vc.members.has(bot.botId)) {
-      inVcBot = bot;
-      break;
-    }
-  }
-
   let desc = `**部屋主** : <@${ownerId}>`;
   if (locked) {
-    desc += `\n- 状態: 🔒 ロック中\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${inVcBot ? "🟢 " + inVcBot.name : "🔴 停止中"}\``;
+    desc += `\n- 状態: 🔒 ロック中\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\``;
   }
   const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setDescription(desc);
 
-  // BOTがいれば「退出」ボタン、いなければ「呼込」ボタン
-  const ttsBtn = createBtn(`vc_tts_toggle_${vc.id}`, inVcBot ? "👋 読上BOT退出" : "🤖 読上BOT呼込", inVcBot ? ButtonStyle.Danger : ButtonStyle.Primary, ttsBots.length === 0);
-
   if (isFixed) {
-    const row = createRow([createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled), ttsBtn]);
+    const row = createRow([createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled)]);
     if (g.features.recruitEnabled) row.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
     if (isPrivate) row.addComponents(createBtn(`vc_invite_btn_${vc.id}`, "➕ メンバー招待", ButtonStyle.Primary));
     return { embeds: [embed], components: [row] };
@@ -450,9 +421,9 @@ async function buildPanelPayload(vc) {
   const row1 = createRow([createBtn("vc_rename", "✏️ 名前変更"), createBtn("vc_toggle_lock", locked ? "🔓 解除" : "🔒 ロック", locked ? ButtonStyle.Danger : ButtonStyle.Secondary), createBtn("vc_settings_btn", "🛡️ 制限設定", ButtonStyle.Secondary, !g.features.genderRoleEnabled), createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled)]);
   const components = locked ? [row1, createRow([createBtn(`vc_knock_${vc.id}`, "🚪 ノックして参加申請", ButtonStyle.Success)])] : [row1];
 
-  const extRow = new ActionRowBuilder().addComponents(ttsBtn);
-  if (g.features.recruitEnabled) extRow.addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success));
-  components.push(extRow);
+  if (g.features.recruitEnabled) {
+    components.push(new ActionRowBuilder().addComponents(createBtn(`vc_recruit_start_${vc.id}`, "📢 募集", ButtonStyle.Success)));
+  }
 
   return { embeds: [embed], components };
 }
@@ -721,40 +692,7 @@ client.on(Events.InteractionCreate, async (i) => {
       await setupCreatePanel(gid);
       return;
     }
-    if (cid.startsWith("vc_tts_toggle_")) {
-      const targetVcId = cid.replace("vc_tts_toggle_", "");
-      const vc = i.member.voice.channel;
-      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
-      
-      const ttsBots = g.dynamicVC.ttsBots || [];
-      if (ttsBots.length === 0) return i.reply({ content: "⚠️ 読み上げBOTが設定されていません。管理パネルからBOTを登録してください。", ephemeral: true });
-      
-      let inVcBot = null;
-      for (const bot of ttsBots) {
-        if (vc.members.has(bot.botId)) {
-          inVcBot = bot;
-          break;
-        }
-      }
 
-      if (inVcBot) {
-        const targetMember = vc.members.get(inVcBot.botId);
-        if (targetMember) {
-          try {
-            await targetMember.voice.disconnect();
-            await sendOrUpdateControlPanel(vc);
-            return i.reply({ content: `👋 \`${inVcBot.name}\` をVCから切断しました。`, ephemeral: true });
-          } catch (e) {
-            console.error(e);
-            return i.reply({ content: "❌ BOTの切断に失敗しました。BOTの権限を確認してください。", ephemeral: true });
-          }
-        }
-      } else {
-        const menu = new StringSelectMenuBuilder().setCustomId(`vc_tts_bot_invoke_${vc.id}`).setPlaceholder("呼び込む読み上げBOTを選択");
-        ttsBots.forEach((bot, index) => menu.addOptions({ label: bot.name, value: String(index), description: "このBOTをVCに呼び出します" }));
-        return i.reply({ content: "### 🤖 読上BOT呼込\n呼び込むBOTを選んでください。", components: [createRow([menu])], ephemeral: true });
-      }
-    }
     if (cid.startsWith("vc_recruit_start_")) {
       const targetVcId = cid.replace("vc_recruit_start_", "");
       const vc = i.member.voice.channel;
@@ -820,16 +758,7 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.editReply({ content: `✅ 現在サーバーにいる全ユーザー (${ops.length}名) を承認済みリストに追加しました。` });
     }
     if (cid === "cfg_btn_auto_delete") return i.showModal(new ModalBuilder().setCustomId("auto_delete_modal").setTitle("削除タイマー設定").addComponents(createRow([new TextInputBuilder().setCustomId("minutes").setLabel("空室削除までの時間 (分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.autoDeleteMinutes || 5)).setRequired(true)])));
-    if (cid === "cfg_tts_bot_add") {
-      const menu = new UserSelectMenuBuilder().setCustomId("tts_bot_add_user_select").setPlaceholder("登録する読み上げBOTを選択");
-      return i.reply({ content: "### 🤖 読上BOTの登録\n一覧からBOTのアカウントを選択してください。\n\n-# ※BOTアカウントのみを選択してください。", components: [createRow([menu])], ephemeral: true });
-    }
-    if (cid === "cfg_tts_bot_delete") {
-      const ttsBots = g.dynamicVC.ttsBots || [];
-      const menu = new StringSelectMenuBuilder().setCustomId("tts_bot_delete_select").setPlaceholder("削除するBOTを選択");
-      ttsBots.forEach((bot, index) => menu.addOptions({ label: bot.name, value: String(index), description: bot.botId }));
-      return i.reply({ content: "🗑️ 削除するBOTを選択してください。", components: [createRow([menu])], ephemeral: true });
-    }
+
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", ""), g));
 
     if (cid === "config_roles_id") {
@@ -1189,62 +1118,11 @@ client.on(Events.InteractionCreate, async (i) => {
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "recruit", updatedG));
     }
-    if (cid.startsWith("tts_bot_cmd_modal_")) {
-      const botId = cid.replace("tts_bot_cmd_modal_", "");
-      const command = i.fields.getTextInputValue("command").trim();
-      
-      const botUser = await i.client.users.fetch(botId).catch(() => null);
-      const name = botUser ? botUser.username : `BOT(${botId})`;
-      
-      const newBot = { name, botId, invokeCommand: command };
-      const ttsBots = g.dynamicVC.ttsBots || [];
-      ttsBots.push(newBot);
-      
-      await updateGuildConfig(gid, { $set: { "dynamicVC.ttsBots": ttsBots } });
-      const updatedG = await getGuildConfig(gid, true);
-      await i.update({ content: `✅ \`${name}\` を読み上げBOTとして登録しました！`, components: [] });
-    }
+
   }
 
   if (i.isAnySelectMenu()) {
-    if (i.customId === "tts_bot_add_user_select") {
-      const selectedUserId = i.values[0];
-      return i.showModal(new ModalBuilder().setCustomId(`tts_bot_cmd_modal_${selectedUserId}`).setTitle("呼出コマンドの設定").addComponents(
-        createRow([new TextInputBuilder().setCustomId("command").setLabel("呼出コマンド (例: /join)").setStyle(TextInputStyle.Short).setRequired(true)])
-      ));
-    }
-    if (i.customId.startsWith("vc_tts_bot_invoke_")) {
-      const targetVcId = i.customId.replace("vc_tts_bot_invoke_", "");
-      const vc = i.member.voice.channel;
-      if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
-      
-      const botIndex = parseInt(i.values[0]);
-      const ttsBots = g.dynamicVC.ttsBots || [];
-      const bot = ttsBots[botIndex];
-      if (!bot) return i.update({ content: "❌ BOTが見つかりません。", components: [] });
 
-      try {
-        const invokeCh = i.channel;
-        if (invokeCh && invokeCh.isTextBased()) {
-          await invokeCh.send(bot.invokeCommand);
-          await i.update({ content: `🤖 \`${bot.name}\` を呼び出しました！\n数秒後に入室します。`, components: [] });
-        } else {
-          return i.update({ content: "❌ テキストチャンネルではありません。", components: [] });
-        }
-      } catch (e) {
-        console.error(e);
-        return i.update({ content: "❌ コマンドの送信に失敗しました。権限を確認してください。", components: [] });
-      }
-    }
-    if (i.customId === "tts_bot_delete_select") {
-      const botIndex = parseInt(i.values[0]);
-      const ttsBots = g.dynamicVC.ttsBots || [];
-      const bot = ttsBots.splice(botIndex, 1)[0];
-      
-      await updateGuildConfig(gid, { $set: { "dynamicVC.ttsBots": ttsBots } });
-      const updatedG = await getGuildConfig(gid, true);
-      await i.update(await getSettingsPayload(gid, "tts_bots", updatedG));
-    }
     if (i.customId.startsWith("rmnu_str_") || i.customId.startsWith("rmnu_rol_")) {
       const isRole = i.customId.startsWith("rmnu_rol_");
       const vcId = i.customId.replace(isRole ? "rmnu_rol_" : "rmnu_str_", "");
