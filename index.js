@@ -25,6 +25,9 @@ const mongoose = require("mongoose");
 const https = require("https");
 const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require("@discordjs/voice");
 
+// HTTPS Keep-Aliveエージェント（接続再利用でレイテンシを削減）
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
+
 // ─── 環境変数と基本設定 ────────────────────────────────────────────────────────
 const token = process.env.DISCORD_TOKEN;
 const mongoUri = process.env.MONGO_URI;
@@ -132,7 +135,7 @@ function fetchVoicevoxAudio(text, speakerId) {
   return new Promise((resolve, reject) => {
     const encodedText = encodeURIComponent(text);
     const apiUrl = `https://api.tts.quest/v3/voicevox/synthesis?speaker=${speakerId}&text=${encodedText}`;
-    https.get(apiUrl, (res) => {
+    const req = https.get(apiUrl, { agent: httpsAgent }, (res) => {
       let data = "";
       res.on("data", c => data += c);
       res.on("end", () => {
@@ -145,6 +148,8 @@ function fetchVoicevoxAudio(text, speakerId) {
         } catch (e) { reject(e); }
       });
     }).on("error", reject);
+    // 5秒でタイムアウト（ハングを防止）
+    req.setTimeout(5000, () => { req.destroy(new Error("TTS API timeout")); });
   });
 }
 
@@ -566,13 +571,12 @@ async function createDynamicVC(guild, member, name, limit, g) {
 }
 
 // ─── 読み上げ (TTS) メッセージ処理 ──────────────────────────────────────────
-async function playTTS(state, text, speakerId) {
-  try {
-    const audioUrl = await fetchVoicevoxAudio(text, speakerId);
+function playTTS(state, text, speakerId) {
+  fetchVoicevoxAudio(text, speakerId).then(audioUrl => {
     https.get(audioUrl, (res) => {
       state.player.play(createAudioResource(res));
     }).on('error', () => { state.isPlaying = false; });
-  } catch (e) { console.error("TTS再生エラー:", e); state.isPlaying = false; }
+  }).catch(e => { console.error("TTS再生エラー:", e); state.isPlaying = false; });
 }
 
 client.on(Events.MessageCreate, async (m) => {
@@ -584,17 +588,18 @@ client.on(Events.MessageCreate, async (m) => {
       text = text.replace(/<@!?\d+>/g, "メンション").replace(/<#\d+>/g, "チャンネル").replace(/<@&\d+>/g, "ロール").replace(/https?:\/\/[^\s]+/g, "URL");
       if (text.length > 100) text = text.slice(0, 100) + "以下略";
       if (text.trim() === "") return;
-      const g = await getGuildConfig(m.guild.id);
-      const speakerId = state.activeSpeakerId || g.dynamicVC.ttsSpeakerId || "3";
-      if (state.isPlaying) state.queue.push({ text, speakerId });
-      else {
+      // activeSpeakerIdはstateにキャッシュ済みのためDB問い合わせを省略
+      const speakerId = state.activeSpeakerId || "3";
+      if (state.isPlaying) {
+        state.queue.push({ text, speakerId });
+      } else {
         state.isPlaying = true;
-        await playTTS(state, text, speakerId);
+        playTTS(state, text, speakerId);
       }
     }
-    // 常に最後に表示させるための再配置
+    // コントロールパネル更新は非同期で実行（TTS再生をブロックしない）
     if (tempChannels.has(m.channel.id)) {
-      await sendOrUpdateControlPanel(m.channel, true);
+      sendOrUpdateControlPanel(m.channel, true).catch(() => {});
     }
   }
 });
