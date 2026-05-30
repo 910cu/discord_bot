@@ -23,10 +23,6 @@ const {
 const fs = require("fs");
 const mongoose = require("mongoose");
 const https = require("https");
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus } = require("@discordjs/voice");
-
-// HTTPS Keep-Aliveエージェント（接続再利用でレイテンシを削減）
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
 
 // ─── 環境変数と基本設定 ────────────────────────────────────────────────────────
 const token = process.env.DISCORD_TOKEN;
@@ -99,59 +95,8 @@ const defaultMessages = {
 const tempChannels = new Set(), controlPanelMsgIds = new Map(), vcOwners = new Map(), lockedVCs = new Set(), genderMode = new Map(), pendingRequests = new Map(), allowedUsers = new Map(), knockNotifyMsgIds = new Map(), introPosted = new Map(), introMsgIds = new Map(), limitLockedVCs = new Set(), privateVCs = new Set(), renameTimestamps = new Map();
 const guildCache = new Map();
 const recruitSelections = new Map();
-const ttsPlayers = new Map();
-
-// ─── VOICEVOX スピーカー定義 ───────────────────────────────────────────────────
-const VOICEVOX_SPEAKERS = [
-  { label: "ずんだもん (ノーマル)", value: "3" },
-  { label: "ずんだもん (あまあま)", value: "1" },
-  { label: "ずんだもん (ツンツン)", value: "7" },
-  { label: "ずんだもん (セクシー)", value: "5" },
-  { label: "ずんだもん (ささやき)", value: "22" },
-  { label: "ずんだもん (ヒソヒソ)", value: "38" },
-  { label: "四国めたん (ノーマル)", value: "2" },
-  { label: "四国めたん (あまあま)", value: "0" },
-  { label: "四国めたん (ツンツン)", value: "6" },
-  { label: "四国めたん (セクシー)", value: "4" },
-  { label: "春日部つむぎ", value: "8" },
-  { label: "雨晴はう", value: "10" },
-  { label: "波音リツ", value: "9" },
-  { label: "玄野武宏 (ノーマル)", value: "11" },
-  { label: "白上虎太郎 (ノーマル)", value: "12" },
-  { label: "青山龍星 (ノーマル)", value: "13" },
-  { label: "冥鳴ひまり (ノーマル)", value: "14" },
-  { label: "九州そら (ノーマル)", value: "16" },
-  { label: "もち子さん (ノーマル)", value: "20" },
-  { label: "剣崎雌雄 (ノーマル)", value: "21" },
-  { label: "WhiteCUL (ノーマル)", value: "23" },
-  { label: "後鬼 (人間)", value: "27" },
-  { label: "No.7 (ノーマル)", value: "29" },
-  { label: "ちび式じい (ノーマル)", value: "42" },
-  { label: "櫻歌ミコ (ノーマル)", value: "43" },
-];
-const getSpeakerName = (id) => VOICEVOX_SPEAKERS.find(s => s.value === String(id))?.label || `スピーカーID: ${id}`;
-
-function fetchVoicevoxAudio(text, speakerId) {
-  return new Promise((resolve, reject) => {
-    const encodedText = encodeURIComponent(text);
-    const apiUrl = `https://api.tts.quest/v3/voicevox/synthesis?speaker=${speakerId}&text=${encodedText}`;
-    const req = https.get(apiUrl, { agent: httpsAgent }, (res) => {
-      let data = "";
-      res.on("data", c => data += c);
-      res.on("end", () => {
-        try {
-          const json = JSON.parse(data);
-          if (json.mp3StreamingUrl) resolve(json.mp3StreamingUrl);
-          else if (json.mp3DownloadUrl) resolve(json.mp3DownloadUrl);
-          else if (json.wavDownloadUrl) resolve(json.wavDownloadUrl);
-          else reject(new Error("No audio URL in response"));
-        } catch (e) { reject(e); }
-      });
-    }).on("error", reject);
-    // 5秒でタイムアウト（ハングを防止）
-    req.setTimeout(5000, () => { req.destroy(new Error("TTS API timeout")); });
-  });
-}
+// 外部読み上げBOT呼び込み状態管理
+const activeTTSBots = new Map();
 
 // ─── データ管理ユーティリティ ──────────────────────────────────────────────────
 const defaultFeatures = {
@@ -305,17 +250,33 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       createRow([createBtn("cfg_btn_member_count", "👥 人数カウンター", ButtonStyle.Secondary), createBtn("cfg_btn_msg_relay", "📨 メッセージ転送", ButtonStyle.Secondary), createBtn("cfg_btn_auto_delete", "⏱️ 削除設定", ButtonStyle.Secondary)]),
       createRow([createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
+  } else if (type === "tts_bots") {
+    const ttsBots = dynamicVC.ttsBots || [];
+    let subDesc = "### 🤖 読上BOT管理\nVCに呼び出せる外部読み上げBOTを登録・管理します。\n\n";
+    if (ttsBots.length === 0) {
+      subDesc += "⚠️ 現在登録されているBOTはありません。\n「➕ 新規登録」から追加してください。";
+    } else {
+      ttsBots.forEach((bot, index) => {
+        subDesc += `**${index + 1}. ${bot.name}**\n- BOT ID: \`${bot.botId}\`\n- 呼出先: <#${bot.invokeChannelId}>\n- コマンド: \`${bot.invokeCommand}\`\n\n`;
+      });
+    }
+    embed.setTitle(null).setDescription(subDesc);
+    components = [
+      createRow([createBtn("cfg_tts_bot_add", "➕ 新規登録", ButtonStyle.Success), createBtn("cfg_tts_bot_delete", "🗑️ 登録削除", ButtonStyle.Danger, ttsBots.length === 0)]),
+      createRow([createBtn("cfg_btn_vc_features", "⬅️ 戻る")])
+    ];
   } else if (type === "vc_features") {
     const bStyle = (feat) => features[feat] ? ButtonStyle.Secondary : ButtonStyle.Danger;
     let subDesc = "### 🎙️ VC内機能設定\n各機能の詳細設定や有効化・無効化が行えます。\n\n";
     subDesc += `**💤 AFK (寝落ち)** [ ${fStatus("afkEnabled")} ]\n┕ 移動先: ${dynamicVC.afkChannelId ? `<#${dynamicVC.afkChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**🖼️ 自己紹介表示** [ ${fStatus("vcIntroDisplayEnabled")} ]\n┕ ソース: ${dynamicVC.introSourceChannelId ? `<#${dynamicVC.introSourceChannelId}>` : "`未設定` 🟥"}\n\n`;
     subDesc += `**🚻 部屋制限** [ ${fStatus("genderRoleEnabled")} ]\n┕ ♂️ ${roles.male ? `<@&${roles.male}>` : "`未設定` 🟥"}\n┕ ♀️ ${roles.female ? `<@&${roles.female}>` : "`未設定` 🟥"}\n\n`;
-    subDesc += `**🗣️ 読み上げ音声**: \`${getSpeakerName(dynamicVC.ttsSpeakerId || "3")}\`\n`;
+    const botsCount = (dynamicVC.ttsBots || []).length;
+    subDesc += `**🤖 読上BOT**: \`${botsCount}件登録済み\`\n`;
     embed.setTitle(null).setDescription(subDesc);
     components = [
       createRow([createBtn("cfg_btn_afk", "💤 AFK", bStyle("afkEnabled")), createBtn("cfg_btn_intro_display", "🖼️ 紹介表示", bStyle("vcIntroDisplayEnabled")), createBtn("cfg_btn_vc", "🚻 部屋制限", bStyle("genderRoleEnabled"))]),
-      createRow([createBtn("cfg_btn_recruit", "📢 募集機能", bStyle("recruitEnabled")), createBtn("cfg_btn_tts_voice", "🗣️ 読上音声", ButtonStyle.Secondary), createBtn("cfg_back_main", "⬅️ 戻る")])
+      createRow([createBtn("cfg_btn_recruit", "📢 募集機能", bStyle("recruitEnabled")), createBtn("cfg_btn_tts_bots", "🤖 読上BOT管理", ButtonStyle.Secondary), createBtn("cfg_back_main", "⬅️ 戻る")])
     ];
   } else {
     const configs = {
@@ -461,17 +422,24 @@ async function buildPanelPayload(vc) {
   const g = await getGuildConfig(vc.guildId);
   const locked = lockedVCs.has(vc.id), gender = genderMode.get(vc.id) ?? null, limit = vc.userLimit ?? 0, ownerId = vcOwners.get(vc.id), isFixed = limitLockedVCs.has(vc.id);
   const isPrivate = privateVCs.has(vc.id);
-  const isTTS = ttsPlayers.has(vc.id);
-  const ttsState = ttsPlayers.get(vc.id);
-  const speakerLabel = getSpeakerName(ttsState?.activeSpeakerId || g.dynamicVC.ttsSpeakerId || "3");
+  // 登録されている読み上げBOTが現在のVCにいるかチェック
+  const ttsBots = g.dynamicVC.ttsBots || [];
+  let inVcBot = null;
+  for (const bot of ttsBots) {
+    if (vc.members.has(bot.botId)) {
+      inVcBot = bot;
+      break;
+    }
+  }
 
   let desc = `**部屋主** : <@${ownerId}>`;
   if (locked) {
-    desc += `\n- 状態: 🔒 ロック中\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${isTTS ? "🟢 " + speakerLabel : "🔴 停止中"}\``;
+    desc += `\n- 状態: 🔒 ロック中\n- 上限: \`${limit === 0 ? "無制限" : limit + "人"}\`\n- 制限: \`${gender === "male" ? "♂️ 男性専用" : gender === "female" ? "♀️ 女性専用" : "なし"}\`\n- 読上: \`${inVcBot ? "🟢 " + inVcBot.name : "🔴 停止中"}\``;
   }
   const embed = new EmbedBuilder().setColor(locked ? 0xed4245 : 0x2b2d31).setDescription(desc);
 
-  const ttsBtn = createBtn(`vc_tts_toggle_${vc.id}`, isTTS ? "🔇 読上停止" : "🗣️ 読上開始", isTTS ? ButtonStyle.Danger : ButtonStyle.Primary);
+  // BOTがいれば「退出」ボタン、いなければ「呼込」ボタン
+  const ttsBtn = createBtn(`vc_tts_toggle_${vc.id}`, inVcBot ? "👋 読上BOT退出" : "🤖 読上BOT呼込", inVcBot ? ButtonStyle.Danger : ButtonStyle.Primary, ttsBots.length === 0);
 
   if (isFixed) {
     const row = createRow([createBtn("vc_afk_prompt", "🛏️ お布団へ運ぶ", ButtonStyle.Secondary, !g.features.afkEnabled), ttsBtn]);
@@ -570,34 +538,11 @@ async function createDynamicVC(guild, member, name, limit, g) {
   }
 }
 
-// ─── 読み上げ (TTS) メッセージ処理 ──────────────────────────────────────────
-function playTTS(state, text, speakerId) {
-  fetchVoicevoxAudio(text, speakerId).then(audioUrl => {
-    https.get(audioUrl, (res) => {
-      state.player.play(createAudioResource(res));
-    }).on('error', () => { state.isPlaying = false; });
-  }).catch(e => { console.error("TTS再生エラー:", e); state.isPlaying = false; });
-}
-
+// ─── メッセージ受信時 (VC内テキスト等) ──────────────────────────────────────────
 client.on(Events.MessageCreate, async (m) => {
   if (m.author.bot || !m.guild) return;
   if (m.channel.type === ChannelType.GuildVoice) {
-    const state = ttsPlayers.get(m.channel.id);
-    if (state) {
-      let text = m.content;
-      text = text.replace(/<@!?\d+>/g, "メンション").replace(/<#\d+>/g, "チャンネル").replace(/<@&\d+>/g, "ロール").replace(/https?:\/\/[^\s]+/g, "URL");
-      if (text.length > 100) text = text.slice(0, 100) + "以下略";
-      if (text.trim() === "") return;
-      // activeSpeakerIdはstateにキャッシュ済みのためDB問い合わせを省略
-      const speakerId = state.activeSpeakerId || "3";
-      if (state.isPlaying) {
-        state.queue.push({ text, speakerId });
-      } else {
-        state.isPlaying = true;
-        playTTS(state, text, speakerId);
-      }
-    }
-    // コントロールパネル更新は非同期で実行（TTS再生をブロックしない）
+    // 常に最後に表示させるための再配置
     if (tempChannels.has(m.channel.id)) {
       sendOrUpdateControlPanel(m.channel, true).catch(() => {});
     }
@@ -780,17 +725,34 @@ client.on(Events.InteractionCreate, async (i) => {
       const targetVcId = cid.replace("vc_tts_toggle_", "");
       const vc = i.member.voice.channel;
       if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
-      if (ttsPlayers.has(vc.id)) {
-        const p = ttsPlayers.get(vc.id);
-        if (p.connection) p.connection.destroy();
-        ttsPlayers.delete(vc.id);
-        await sendOrUpdateControlPanel(vc);
-        return i.reply({ content: "🔇 読み上げを停止し、VCから退出しました。", ephemeral: true });
+      
+      const ttsBots = g.dynamicVC.ttsBots || [];
+      if (ttsBots.length === 0) return i.reply({ content: "⚠️ 読み上げBOTが設定されていません。管理パネルからBOTを登録してください。", ephemeral: true });
+      
+      let inVcBot = null;
+      for (const bot of ttsBots) {
+        if (vc.members.has(bot.botId)) {
+          inVcBot = bot;
+          break;
+        }
+      }
+
+      if (inVcBot) {
+        const targetMember = vc.members.get(inVcBot.botId);
+        if (targetMember) {
+          try {
+            await targetMember.voice.disconnect();
+            await sendOrUpdateControlPanel(vc);
+            return i.reply({ content: `👋 \`${inVcBot.name}\` をVCから切断しました。`, ephemeral: true });
+          } catch (e) {
+            console.error(e);
+            return i.reply({ content: "❌ BOTの切断に失敗しました。BOTの権限を確認してください。", ephemeral: true });
+          }
+        }
       } else {
-        const currentSpeaker = g.dynamicVC.ttsSpeakerId || "3";
-        const menu = new StringSelectMenuBuilder().setCustomId(`vc_tts_start_select_${vc.id}`).setPlaceholder("読み上げの声を選択して開始");
-        VOICEVOX_SPEAKERS.forEach(s => menu.addOptions({ label: s.label, value: s.value, description: s.value === currentSpeaker ? "現在のデフォルト" : "この声で読み上げを開始します" }));
-        return i.reply({ content: "### 🗣️ 読み上げ開始\n使用するVOICEVOXキャラクターを選んでください。", components: [createRow([menu])], ephemeral: true });
+        const menu = new StringSelectMenuBuilder().setCustomId(`vc_tts_bot_invoke_${vc.id}`).setPlaceholder("呼び込む読み上げBOTを選択");
+        ttsBots.forEach((bot, index) => menu.addOptions({ label: bot.name, value: String(index), description: "このBOTをVCに呼び出します" }));
+        return i.reply({ content: "### 🤖 読上BOT呼込\n呼び込むBOTを選んでください。", components: [createRow([menu])], ephemeral: true });
       }
     }
     if (cid.startsWith("vc_recruit_start_")) {
@@ -858,11 +820,19 @@ client.on(Events.InteractionCreate, async (i) => {
       return i.editReply({ content: `✅ 現在サーバーにいる全ユーザー (${ops.length}名) を承認済みリストに追加しました。` });
     }
     if (cid === "cfg_btn_auto_delete") return i.showModal(new ModalBuilder().setCustomId("auto_delete_modal").setTitle("削除タイマー設定").addComponents(createRow([new TextInputBuilder().setCustomId("minutes").setLabel("空室削除までの時間 (分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.autoDeleteMinutes || 5)).setRequired(true)])));
-    if (cid === "cfg_btn_tts_voice") {
-      const currentId = g.dynamicVC.ttsSpeakerId || "3";
-      const menu = new StringSelectMenuBuilder().setCustomId("select_tts_voice").setPlaceholder("読み上げの声を選択");
-      VOICEVOX_SPEAKERS.forEach(s => menu.addOptions({ label: s.label, value: s.value, default: s.value === currentId }));
-      return i.reply({ content: "### 🗣️ 読み上げ音声の選択\n使用するVOICEVOXキャラクターを選んでください。", components: [createRow([menu])], ephemeral: true });
+    if (cid === "cfg_tts_bot_add") {
+      return i.showModal(new ModalBuilder().setCustomId("tts_bot_add_modal").setTitle("読上BOTの追加").addComponents(
+        createRow([new TextInputBuilder().setCustomId("name").setLabel("表示名 (例: 棒読みちゃん)").setStyle(TextInputStyle.Short).setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("bot_id").setLabel("BOTのユーザーID").setStyle(TextInputStyle.Short).setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("ch_id").setLabel("呼出コマンド送信先チャンネルID").setStyle(TextInputStyle.Short).setRequired(true)]),
+        createRow([new TextInputBuilder().setCustomId("command").setLabel("呼出コマンド (例: /join)").setStyle(TextInputStyle.Short).setRequired(true)])
+      ));
+    }
+    if (cid === "cfg_tts_bot_delete") {
+      const ttsBots = g.dynamicVC.ttsBots || [];
+      const menu = new StringSelectMenuBuilder().setCustomId("tts_bot_delete_select").setPlaceholder("削除するBOTを選択");
+      ttsBots.forEach((bot, index) => menu.addOptions({ label: bot.name, value: String(index), description: bot.botId }));
+      return i.reply({ content: "🗑️ 削除するBOTを選択してください。", components: [createRow([menu])], ephemeral: true });
     }
     if (cid.startsWith("cfg_btn_")) return i.update(await getSettingsPayload(gid, cid.replace("cfg_btn_", ""), g));
 
@@ -1223,40 +1193,55 @@ client.on(Events.InteractionCreate, async (i) => {
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "recruit", updatedG));
     }
+    if (cid === "tts_bot_add_modal") {
+      const name = i.fields.getTextInputValue("name").trim();
+      const bot_id = i.fields.getTextInputValue("bot_id").trim();
+      const ch_id = i.fields.getTextInputValue("ch_id").trim();
+      const command = i.fields.getTextInputValue("command").trim();
+      
+      const newBot = { name, botId: bot_id, invokeChannelId: ch_id, invokeCommand: command };
+      const ttsBots = g.dynamicVC.ttsBots || [];
+      ttsBots.push(newBot);
+      
+      await updateGuildConfig(gid, { $set: { "dynamicVC.ttsBots": ttsBots } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "tts_bots", updatedG));
+    }
   }
 
   if (i.isAnySelectMenu()) {
-    if (i.customId.startsWith("vc_tts_start_select_")) {
-      const targetVcId = i.customId.replace("vc_tts_start_select_", "");
+    if (i.customId.startsWith("vc_tts_bot_invoke_")) {
+      const targetVcId = i.customId.replace("vc_tts_bot_invoke_", "");
       const vc = i.member.voice.channel;
       if (!vc || vc.id !== targetVcId) return i.reply({ content: "このVCに参加中のみ実行可能です。", ephemeral: true });
-
-      const selectedVoice = i.values[0];
+      
+      const botIndex = parseInt(i.values[0]);
+      const ttsBots = g.dynamicVC.ttsBots || [];
+      const bot = ttsBots[botIndex];
+      if (!bot) return i.update({ content: "❌ BOTが見つかりません。", components: [] });
 
       try {
-        const connection = joinVoiceChannel({ channelId: vc.id, guildId: vc.guild.id, adapterCreator: vc.guild.voiceAdapterCreator });
-        const player = createAudioPlayer();
-        connection.subscribe(player);
-        ttsPlayers.set(vc.id, { player, queue: [], isPlaying: false, connection, activeSpeakerId: selectedVoice });
-        player.on(AudioPlayerStatus.Idle, () => {
-          const state = ttsPlayers.get(vc.id);
-          if (!state) return;
-          if (state.queue.length > 0) {
-            const next = state.queue.shift();
-            playTTS(state, next.text, next.speakerId);
-          } else state.isPlaying = false;
-        });
-        await sendOrUpdateControlPanel(vc);
-        return i.update({ content: `🗣️ 読み上げを開始しました！このVC専用のテキストチャットに書き込んだ内容を \`${getSpeakerName(selectedVoice)}\` の声で読み上げます。`, components: [] });
+        const invokeCh = i.guild.channels.cache.get(bot.invokeChannelId);
+        if (invokeCh && invokeCh.isTextBased()) {
+          await invokeCh.send(bot.invokeCommand);
+          await i.update({ content: `🤖 \`${bot.name}\` を呼び出しました！\n数秒後に入室します。`, components: [] });
+          // コントロールパネルの更新は数秒後にBOTの入室を検知して自動的に行われます
+        } else {
+          return i.update({ content: "❌ 設定された呼出先チャンネルが見つからないか、テキストチャンネルではありません。", components: [] });
+        }
       } catch (e) {
         console.error(e);
-        return i.update({ content: "❌ 読み上げの開始に失敗しました。BOTに必要な権限があるか確認してください。", components: [] });
+        return i.update({ content: "❌ コマンドの送信に失敗しました。権限を確認してください。", components: [] });
       }
     }
-    if (i.customId === "select_tts_voice") {
-      const selected = i.values[0];
-      await updateGuildConfig(gid, { $set: { "dynamicVC.ttsSpeakerId": selected } });
-      return i.update({ content: `### 🗣️ 読み上げ音声を変更しました\n\`${getSpeakerName(selected)}\` に設定しました！`, components: [] });
+    if (i.customId === "tts_bot_delete_select") {
+      const botIndex = parseInt(i.values[0]);
+      const ttsBots = g.dynamicVC.ttsBots || [];
+      const bot = ttsBots.splice(botIndex, 1)[0];
+      
+      await updateGuildConfig(gid, { $set: { "dynamicVC.ttsBots": ttsBots } });
+      const updatedG = await getGuildConfig(gid, true);
+      await i.update(await getSettingsPayload(gid, "tts_bots", updatedG));
     }
     if (i.customId.startsWith("rmnu_str_") || i.customId.startsWith("rmnu_rol_")) {
       const isRole = i.customId.startsWith("rmnu_rol_");
@@ -1442,7 +1427,7 @@ client.on(Events.VoiceStateUpdate, async (o, n) => {
   if (o.channelId && tempChannels.has(o.channelId) && o.channelId !== n.channelId) {
     const ch = o.channel, key = `${o.channelId}_${o.member.id}`; if (introMsgIds.has(key)) { try { await (await ch.messages.fetch(introMsgIds.get(key))).delete(); } catch { } introMsgIds.delete(key); introPosted.get(o.channelId)?.delete(o.member.id); }
     const realMembers = ch?.members.filter(m => !m.user.bot);
-    if (realMembers?.size === 0) { try { await ch.delete(); [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections, privateVCs].forEach(s => s.delete(o.channelId)); const p = ttsPlayers.get(o.channelId); if (p && p.connection) p.connection.destroy(); ttsPlayers.delete(o.channelId); } catch { } }
+    if (realMembers?.size === 0) { try { await ch.delete(); [tempChannels, controlPanelMsgIds, lockedVCs, genderMode, vcOwners, pendingRequests, allowedUsers, knockNotifyMsgIds, renameTimestamps, introPosted, limitLockedVCs, recruitSelections, privateVCs].forEach(s => s.delete(o.channelId)); } catch { } }
     else if (ch && vcOwners.get(ch.id) === o.member.id) { const next = realMembers.first(); if (next) { vcOwners.set(ch.id, next.id); await sendOrUpdateControlPanel(ch, true); } }
   }
 });
