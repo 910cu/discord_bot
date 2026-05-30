@@ -257,7 +257,7 @@ async function getSettingsPayload(gid, type = "main", config = null) {
       subDesc += "⚠️ 現在登録されているBOTはありません。\n「➕ 新規登録」から追加してください。";
     } else {
       ttsBots.forEach((bot, index) => {
-        subDesc += `**${index + 1}. ${bot.name}**\n- BOT ID: \`${bot.botId}\`\n- 呼出先: <#${bot.invokeChannelId}>\n- コマンド: \`${bot.invokeCommand}\`\n\n`;
+        subDesc += `**${index + 1}. ${bot.name}**\n- BOT ID: \`${bot.botId}\`\n- コマンド: \`${bot.invokeCommand}\`\n\n`;
       });
     }
     embed.setTitle(null).setDescription(subDesc);
@@ -821,12 +821,8 @@ client.on(Events.InteractionCreate, async (i) => {
     }
     if (cid === "cfg_btn_auto_delete") return i.showModal(new ModalBuilder().setCustomId("auto_delete_modal").setTitle("削除タイマー設定").addComponents(createRow([new TextInputBuilder().setCustomId("minutes").setLabel("空室削除までの時間 (分)").setStyle(TextInputStyle.Short).setValue(String(g.dynamicVC.autoDeleteMinutes || 5)).setRequired(true)])));
     if (cid === "cfg_tts_bot_add") {
-      return i.showModal(new ModalBuilder().setCustomId("tts_bot_add_modal").setTitle("読上BOTの追加").addComponents(
-        createRow([new TextInputBuilder().setCustomId("name").setLabel("表示名 (例: 棒読みちゃん)").setStyle(TextInputStyle.Short).setRequired(true)]),
-        createRow([new TextInputBuilder().setCustomId("bot_id").setLabel("BOTのユーザーID").setStyle(TextInputStyle.Short).setRequired(true)]),
-        createRow([new TextInputBuilder().setCustomId("ch_id").setLabel("呼出コマンド送信先チャンネルID").setStyle(TextInputStyle.Short).setRequired(true)]),
-        createRow([new TextInputBuilder().setCustomId("command").setLabel("呼出コマンド (例: /join)").setStyle(TextInputStyle.Short).setRequired(true)])
-      ));
+      const menu = new UserSelectMenuBuilder().setCustomId("tts_bot_add_user_select").setPlaceholder("登録する読み上げBOTを選択");
+      return i.reply({ content: "### 🤖 読上BOTの登録\n一覧からBOTのアカウントを選択してください。\n\n-# ※BOTアカウントのみを選択してください。", components: [createRow([menu])], ephemeral: true });
     }
     if (cid === "cfg_tts_bot_delete") {
       const ttsBots = g.dynamicVC.ttsBots || [];
@@ -1193,23 +1189,30 @@ client.on(Events.InteractionCreate, async (i) => {
       const updatedG = await getGuildConfig(gid, true);
       await i.update(await getSettingsPayload(gid, "recruit", updatedG));
     }
-    if (cid === "tts_bot_add_modal") {
-      const name = i.fields.getTextInputValue("name").trim();
-      const bot_id = i.fields.getTextInputValue("bot_id").trim();
-      const ch_id = i.fields.getTextInputValue("ch_id").trim();
+    if (cid.startsWith("tts_bot_cmd_modal_")) {
+      const botId = cid.replace("tts_bot_cmd_modal_", "");
       const command = i.fields.getTextInputValue("command").trim();
       
-      const newBot = { name, botId: bot_id, invokeChannelId: ch_id, invokeCommand: command };
+      const botUser = await i.client.users.fetch(botId).catch(() => null);
+      const name = botUser ? botUser.username : `BOT(${botId})`;
+      
+      const newBot = { name, botId, invokeCommand: command };
       const ttsBots = g.dynamicVC.ttsBots || [];
       ttsBots.push(newBot);
       
       await updateGuildConfig(gid, { $set: { "dynamicVC.ttsBots": ttsBots } });
       const updatedG = await getGuildConfig(gid, true);
-      await i.update(await getSettingsPayload(gid, "tts_bots", updatedG));
+      await i.update({ content: `✅ \`${name}\` を読み上げBOTとして登録しました！`, components: [] });
     }
   }
 
   if (i.isAnySelectMenu()) {
+    if (i.customId === "tts_bot_add_user_select") {
+      const selectedUserId = i.values[0];
+      return i.showModal(new ModalBuilder().setCustomId(`tts_bot_cmd_modal_${selectedUserId}`).setTitle("呼出コマンドの設定").addComponents(
+        createRow([new TextInputBuilder().setCustomId("command").setLabel("呼出コマンド (例: /join)").setStyle(TextInputStyle.Short).setRequired(true)])
+      ));
+    }
     if (i.customId.startsWith("vc_tts_bot_invoke_")) {
       const targetVcId = i.customId.replace("vc_tts_bot_invoke_", "");
       const vc = i.member.voice.channel;
@@ -1221,13 +1224,12 @@ client.on(Events.InteractionCreate, async (i) => {
       if (!bot) return i.update({ content: "❌ BOTが見つかりません。", components: [] });
 
       try {
-        const invokeCh = i.guild.channels.cache.get(bot.invokeChannelId);
+        const invokeCh = i.channel;
         if (invokeCh && invokeCh.isTextBased()) {
           await invokeCh.send(bot.invokeCommand);
           await i.update({ content: `🤖 \`${bot.name}\` を呼び出しました！\n数秒後に入室します。`, components: [] });
-          // コントロールパネルの更新は数秒後にBOTの入室を検知して自動的に行われます
         } else {
-          return i.update({ content: "❌ 設定された呼出先チャンネルが見つからないか、テキストチャンネルではありません。", components: [] });
+          return i.update({ content: "❌ テキストチャンネルではありません。", components: [] });
         }
       } catch (e) {
         console.error(e);
